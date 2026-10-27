@@ -1,6 +1,6 @@
 # Flutter Architecture
 
-> Describes the app in `spy_love/` (there is no `frontend/` directory). Items under **Planned / not implemented** are not in the code.
+> Describes the Consent Horizon Flutter app (`spy_love/` in the separate spy_app repository). Items under **Planned / not implemented** are not in the code.
 
 ## Stack (Implemented)
 
