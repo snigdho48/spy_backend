@@ -108,9 +108,9 @@ flutter build appbundle \
 - [ ] Run security tests from `backend/`:
 
 ```powershell
-# from the repository root
+# from the repository root; settings come from backend/pytest.ini
 cd backend
-..\venv\Scripts\python.exe manage.py test tests.security.test_security_hardening tests.api.test_api_contract --settings=config.settings.test
+..\venv\Scripts\python.exe -m pytest tests/security tests/api
 ```
 
 - [ ] Confirm `photo_url` / `contact_photo_url` are https-only and the **server never fetches** those URLs (SSRF avoidance).
