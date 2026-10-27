@@ -94,9 +94,9 @@ Each Django app under `backend/apps/` (`accounts`, `tenants`, `devices`, `events
 5. **Revoke / stop monitoring:** `DELETE /api/v1/devices/{id}/consent/` or `POST /api/v1/devices/{id}/disconnect/` (both revoke consent and disconnect the device).
 6. Consent and pairing actions are written to the audit log (`GET /api/v1/audit/`).
 
-Valid scopes (`VALID_CONSENT_SCOPES`): `location`, `battery`, `network`, `app_usage`, `device_info`, `notifications`, `call_log`, `sms`, `messaging`, `sim`.
+Valid scopes (`VALID_CONSENT_SCOPES`): `location`, `battery`, `network`, `app_usage`, `device_info`, `notifications`, `call_log`, `sms`, `messaging`, `sim`, `screen`, `contacts`.
 
-**Collectors implemented in the Flutter app:** `location.update`, `call.log`, `sms.received`, `message.notification`, `sim.*`, `battery.status`, `network.status`, `app_usage.snapshot`, `device_info.snapshot`.
+**Collectors implemented in the Flutter app:** `location.update`, `call.log`, `sms.received`, `message.notification`, `sim.*`, `battery.status`, `network.status`, `app_usage.snapshot`, `device_info.snapshot`. Backend also accepts `contact.snapshot`, `app_inventory.snapshot`, richer `message.received`/`message.sent`/`message.thread`, and `notification.*` (app follow-up to emit).
 
 **Planned / not implemented:** in-place update of consent scopes (there is no `POST /devices/{id}/consent/`), consent version management UI/migrations, immutable (append-only enforced) audit storage.
 

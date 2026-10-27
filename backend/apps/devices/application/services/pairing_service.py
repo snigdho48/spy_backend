@@ -281,12 +281,14 @@ class ConsentService:
             "battery": "battery",
             "network": "network",
             "app_usage": "app_usage",
+            "app_inventory": "app_usage",
             "device_info": "device_info",
             "notification": "notifications",
             "call": "call_log",
             "sms": "sms",
             "message": "messaging",
             "sim": "sim",
+            "contact": "contacts",
         }
         prefix = event_type.split(".")[0]
         required_scope = scope_map.get(prefix)

@@ -210,4 +210,6 @@ Retention: 90 days hot → archive to S3 → drop partition.
 | `devices_safe_zone` | `SafeZone` | Tenant geofence: `name`, `address`, `lat`, `lng`, `radius_m`, optional `device` |
 | `devices_watchlist_keyword` | `WatchlistKeyword` | Tenant keyword watchlist (`word`, `created_by`) |
 | `events_device_event` | `DeviceEvent` | `event_type`, `payload` JSON (may include place/zone/contact fields), nullable unique `idempotency_key`, `event_timestamp` |
+| `events_device_contact_snapshot` | `DeviceContactSnapshot` | OneToOne per device; latest address-book `contacts` JSON + `contact_count` + `captured_at` |
+| `events_device_app_inventory_snapshot` | `DeviceAppInventorySnapshot` | OneToOne per device; latest installed `apps` JSON + `app_count` + `include_system` + `captured_at` |
 | `audit_audit_log` | `AuditLog` | `actor`, `action`, `resource_type`, `resource_id`, `metadata` JSON, ip, user_agent |

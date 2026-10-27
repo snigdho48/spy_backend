@@ -263,6 +263,7 @@ VALID_CONSENT_SCOPES = frozenset({
     "messaging",
     "sim",
     "screen",
+    "contacts",
 })
 
 # Human-facing catalog for the consent scopes above: a clear label and
@@ -286,6 +287,10 @@ CONSENT_SCOPE_CATALOG = {
             "Requires an on-device capture grant and shows a persistent sharing "
             "indicator; can be revoked at any time."
         ),
+    },
+    "contacts": {
+        "label": "Contacts",
+        "description": "Address-book names, phone numbers, and emails (snapshot).",
     },
 }
 

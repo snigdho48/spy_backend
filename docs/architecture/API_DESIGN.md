@@ -169,7 +169,7 @@ Called by the **monitor** account; the monitor chooses the consent scopes. `Cons
   "consent_version": "1.0.0"
 }
 ```
-`consent_scopes` must be non-empty and drawn from: `location, battery, network, app_usage, device_info, notifications, call_log, sms, messaging, sim`.
+`consent_scopes` must be non-empty and drawn from: `location, battery, network, app_usage, device_info, notifications, call_log, sms, messaging, sim, screen, contacts`.
 
 **Response 201:** `{ "device": {...}, "consent": { id, scopes, consent_version, granted_at, revoked_at } }`
 
@@ -184,7 +184,10 @@ There is **no** `POST /devices/{id}/consent/` to update scopes in place. Consent
 | `geofence.enter`, `geofence.exit` | `location` (same as location; not a separate scope) |
 | `call.*` | `call_log` |
 | `sms.*` | `sms` |
-| `message.*` / notification alerts | `notifications` / messaging as configured |
+| `message.*` (incl. `message.notification`, `message.received`, `message.sent`, `message.thread`) | `messaging` |
+| `notification.*` | `notifications` |
+| `contact.*` (address-book snapshot) | `contacts` |
+| `app_inventory.*` | `app_usage` |
 | `sim.*` | `sim` |
 | `battery.*` | `battery` |
 | `network.*` | `network` |
@@ -248,7 +251,15 @@ Optional payload fields (validated; photos never fetched by the server):
 List events for the user's tenant (paginated, newest first by `event_timestamp`).
 **Query:** `device_id`, `event_type`, `event_prefix` (matches `<prefix>.*`), plus pagination. There are no `from`/`to` filters.
 
-**Event types in use:** `location.update`, `geofence.enter`, `geofence.exit`, `call.*`, `sms.*`, `message.notification`, `sim.*`, plus battery/network/app_usage/device_info when collectors run.
+**Event types in use:** `location.update`, `geofence.enter`, `geofence.exit`, `call.*`, `sms.*`, `message.notification`, `message.received`, `message.sent`, `message.thread`, `notification.posted`, `notification.removed`, `contact.snapshot`, `app_inventory.snapshot`, `sim.*`, plus battery/network/app_usage/device_info when collectors run.
+
+### GET `/events/contacts/latest/?device_id=`
+Latest address-book snapshot for a device (requires tenant membership). 404 if none yet.
+
+### GET `/events/app-inventory/latest/?device_id=`
+Latest installed-app inventory for a device (requires tenant membership). 404 if none yet.
+
+Icons / photo blobs are stripped at ingest; monitors should not expect `icon` fields.
 
 ---
 
