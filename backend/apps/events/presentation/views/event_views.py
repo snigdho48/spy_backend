@@ -7,11 +7,17 @@ from rest_framework.views import APIView
 from apps.accounts.application.services.auth_service import AuthenticationService
 from apps.events.application.services.ingestion_service import EventIngestionService
 from apps.events.infrastructure.models.event import DeviceEvent
+from apps.events.infrastructure.models.snapshots import (
+    DeviceAppInventorySnapshot,
+    DeviceContactSnapshot,
+)
 from apps.events.presentation.serializers.event_serializers import (
+    DeviceAppInventorySnapshotSerializer,
+    DeviceContactSnapshotSerializer,
     DeviceEventSerializer,
     EventBatchSerializer,
 )
-from core.domain.exceptions import EntityNotFoundError
+from core.domain.exceptions import EntityNotFoundError, ValidationError
 
 
 class EventRateThrottle(UserRateThrottle):
@@ -63,3 +69,45 @@ class EventListView(TenantMixin, generics.ListAPIView):
         if event_prefix:
             qs = qs.filter(event_type__startswith=f"{event_prefix}.")
         return qs.order_by("-event_timestamp", "-created_at")
+
+
+class ContactSnapshotLatestView(TenantMixin, APIView):
+    """Latest address-book snapshot for a device in the monitor's tenant."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tenant = self.get_tenant()
+        device_id = request.query_params.get("device_id")
+        if not device_id:
+            raise ValidationError("device_id is required")
+        snap = (
+            DeviceContactSnapshot.objects.filter(tenant=tenant, device_id=device_id)
+            .select_related("device")
+            .first()
+        )
+        if not snap:
+            raise EntityNotFoundError("No contact snapshot for this device")
+        return Response(DeviceContactSnapshotSerializer(snap).data)
+
+
+class AppInventorySnapshotLatestView(TenantMixin, APIView):
+    """Latest installed-app inventory for a device in the monitor's tenant."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tenant = self.get_tenant()
+        device_id = request.query_params.get("device_id")
+        if not device_id:
+            raise ValidationError("device_id is required")
+        snap = (
+            DeviceAppInventorySnapshot.objects.filter(
+                tenant=tenant, device_id=device_id
+            )
+            .select_related("device")
+            .first()
+        )
+        if not snap:
+            raise EntityNotFoundError("No app inventory snapshot for this device")
+        return Response(DeviceAppInventorySnapshotSerializer(snap).data)

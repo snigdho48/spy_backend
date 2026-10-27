@@ -14,7 +14,15 @@ from apps.events.application.services.contact_payload import (
     CONTACT_EVENT_PREFIXES,
     apply_contact_redaction,
 )
+from apps.events.domain.event_types import (
+    APP_INVENTORY_TYPES,
+    CONTACT_SNAPSHOT_TYPES,
+)
 from apps.events.infrastructure.models.event import DeviceEvent
+from apps.events.infrastructure.models.snapshots import (
+    DeviceAppInventorySnapshot,
+    DeviceContactSnapshot,
+)
 from apps.tenants.infrastructure.models.tenant import Tenant
 from core.domain.exceptions import ConflictError, EntityNotFoundError, ValidationError
 
@@ -120,7 +128,7 @@ class EventIngestionService:
                             device, payload
                         )
                 elif event_type.startswith(CONTACT_EVENT_PREFIXES):
-                    # Do not fetch contact_photo_url (SSRF). Redact body/text.
+                    # call.* / sms.* contact metadata. Do not fetch photos (SSRF).
                     payload = apply_contact_redaction(payload)
 
                 created_events.append(
@@ -143,6 +151,7 @@ class EventIngestionService:
                 DeviceEvent.objects.bulk_create(created_events, ignore_conflicts=True)
                 device.last_seen_at = timezone.now()
                 device.save(update_fields=["last_seen_at", "updated_at"])
+                self._upsert_snapshots(tenant, device, created_events)
 
             events_snapshot = list(created_events)
             threading.Thread(
@@ -152,6 +161,52 @@ class EventIngestionService:
             ).start()
 
         return {"accepted": accepted, "rejected": rejected, "errors": errors}
+
+    def _upsert_snapshots(
+        self,
+        tenant: Tenant,
+        device: Device,
+        events: list[DeviceEvent],
+    ) -> None:
+        """Keep latest contact / app-inventory snapshot rows in sync with ingest."""
+        for event in events:
+            if (
+                event.event_type in CONTACT_SNAPSHOT_TYPES
+                or event.event_type.startswith("contact.")
+            ):
+                contacts = event.payload.get("contacts") or []
+                if not isinstance(contacts, list):
+                    contacts = []
+                DeviceContactSnapshot.objects.update_or_create(
+                    device=device,
+                    defaults={
+                        "tenant": tenant,
+                        "contacts": contacts,
+                        "contact_count": len(contacts),
+                        "source_event_id": event.pk,
+                        "captured_at": event.event_timestamp,
+                    },
+                )
+            elif (
+                event.event_type in APP_INVENTORY_TYPES
+                or event.event_type.startswith("app_inventory.")
+            ):
+                apps = event.payload.get("apps") or []
+                if not isinstance(apps, list):
+                    apps = []
+                DeviceAppInventorySnapshot.objects.update_or_create(
+                    device=device,
+                    defaults={
+                        "tenant": tenant,
+                        "apps": apps,
+                        "app_count": len(apps),
+                        "include_system": bool(
+                            event.payload.get("include_system", True)
+                        ),
+                        "source_event_id": event.pk,
+                        "captured_at": event.event_timestamp,
+                    },
+                )
 
     def _broadcast_events(
         self, tenant: Tenant, device: Device, events: list[DeviceEvent]

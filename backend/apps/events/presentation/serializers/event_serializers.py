@@ -8,7 +8,21 @@ from apps.events.application.services.contact_payload import (
     normalize_https_photo_url,
     strip_control_chars,
 )
+from apps.events.application.services.snapshot_payloads import (
+    normalize_event_payload,
+)
+from apps.events.domain.event_types import (
+    APP_INVENTORY_TYPES,
+    CONTACT_SNAPSHOT_TYPES,
+    EventTypes,
+    NOTIFICATION_FEED_TYPES,
+    RICH_MESSAGE_TYPES,
+)
 from apps.events.infrastructure.models.event import DeviceEvent
+from apps.events.infrastructure.models.snapshots import (
+    DeviceAppInventorySnapshot,
+    DeviceContactSnapshot,
+)
 
 MAX_PLACE_NAME = 128
 MAX_ADDRESS = 255
@@ -55,7 +69,22 @@ class EventItemSerializer(serializers.Serializer):
                 event_type, payload
             )
         elif event_type.startswith(CONTACT_EVENT_PREFIXES):
+            # call.* / sms.* contact metadata (not address-book contact.*)
             attrs["payload"] = self._validate_contact_payload(payload)
+        elif (
+            event_type in CONTACT_SNAPSHOT_TYPES
+            or event_type.startswith("contact.")
+            or event_type in APP_INVENTORY_TYPES
+            or event_type.startswith("app_inventory.")
+            or event_type in RICH_MESSAGE_TYPES
+            or event_type in NOTIFICATION_FEED_TYPES
+            or event_type.startswith("notification.")
+            or event_type == EventTypes.MESSAGE_NOTIFICATION
+        ):
+            try:
+                attrs["payload"] = normalize_event_payload(event_type, payload)
+            except ValueError as exc:
+                raise serializers.ValidationError({"payload": str(exc)}) from exc
         return attrs
 
     def _validate_locationish_payload(self, event_type: str, payload: dict) -> dict:
@@ -170,4 +199,33 @@ class DeviceEventSerializer(serializers.ModelSerializer):
             "payload",
             "event_timestamp",
             "created_at",
+        ]
+
+
+class DeviceContactSnapshotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceContactSnapshot
+        fields = [
+            "id",
+            "device_id",
+            "contacts",
+            "contact_count",
+            "captured_at",
+            "updated_at",
+            "source_event_id",
+        ]
+
+
+class DeviceAppInventorySnapshotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceAppInventorySnapshot
+        fields = [
+            "id",
+            "device_id",
+            "apps",
+            "app_count",
+            "include_system",
+            "captured_at",
+            "updated_at",
+            "source_event_id",
         ]
