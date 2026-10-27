@@ -139,6 +139,15 @@ class DevicePairingService:
                 ip_address=ctx.get("ip_address"),
             )
 
+            # If the new consent dropped the screen scope, kick live streams.
+            if "screen" not in (consent.scopes or []):
+                from apps.devices.application.services.screen_share_service import (
+                    ScreenShareService,
+                )
+                ScreenShareService().terminate_open_for_device(
+                    device, reason="consent_revoked", actor=user
+                )
+
         AuditService().log(
             tenant=tenant,
             actor=user,
@@ -217,6 +226,14 @@ class DeviceManagementService:
             )
             device.status = Device.Status.REVOKED
             device.save(update_fields=["status", "updated_at"])
+
+        # Screen consent is gone — close any live screen WS streams.
+        from apps.devices.application.services.screen_share_service import (
+            ScreenShareService,
+        )
+        ScreenShareService().terminate_open_for_device(
+            device, reason="consent_revoked", actor=user
+        )
 
         AuditService().log(
             tenant=tenant,

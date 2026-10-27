@@ -36,6 +36,7 @@ services:
     build:
       context: ..
       dockerfile: infra/docker/Dockerfile.api
+    user: appuser
     env_file:
       - ../backend/.env.example
       - path: ./.env
@@ -51,6 +52,8 @@ services:
       # 'api' lets Prometheus scrape api:8000 inside the compose network.
       ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-localhost,127.0.0.1,10.0.2.2,.ngrok-free.app,api}
       DJANGO_SETTINGS_MODULE: config.settings.dev
+      # Override .env.example USE_REDIS=false so Redis channel/cache/broker are used in compose.
+      USE_REDIS: "true"
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     depends_on:
@@ -81,6 +84,8 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       SKIP_MIGRATIONS: "true"
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      USE_REDIS: "true"
     depends_on:
       - api
       - redis

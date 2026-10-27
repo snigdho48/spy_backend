@@ -262,3 +262,209 @@ class TestScreenShare:
         assert AuditLog.objects.filter(
             resource_id=device_id, action="screen_share.denied"
         ).exists()
+
+
+# ---------------------------------------------------------------------------
+# Extra coverage: reuse HTTP status, lazy TTL expire, mid-session WS kick.
+# ---------------------------------------------------------------------------
+
+import asyncio
+import json
+from datetime import timedelta
+from urllib.parse import quote
+
+import pytest
+from asgiref.sync import sync_to_async
+from channels.testing import WebsocketCommunicator
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+
+from apps.devices.application.services.screen_share_service import (
+    REQUEST_TTL,
+    ScreenShareService,
+)
+from apps.devices.infrastructure.models.device import ConsentRecord, Device
+from config.asgi import application
+
+User = get_user_model()
+
+
+def _ws_path(session_id, token):
+    return f"/ws/v1/screen/{session_id}/?token={quote(token)}"
+
+
+@pytest.mark.django_db
+class TestScreenShareExtras:
+    def test_request_reuse_returns_200(self, api_client):
+        monitored = _register(api_client, "scr-reuse-kid@example.com", "Kid Reuse")
+        monitor = _register(api_client, "scr-reuse-parent@example.com", "Parent Reuse")
+        device_id = _pair_device(
+            api_client,
+            monitored["tokens"],
+            monitor["tokens"],
+            ["screen"],
+            "fp-scr-reuse",
+        )
+
+        _auth(api_client, monitor["tokens"])
+        first = api_client.post(
+            reverse("device-screen-request", kwargs={"device_id": device_id}),
+            format="json",
+        )
+        assert first.status_code == status.HTTP_201_CREATED
+        session_id = first.data["id"]
+
+        second = api_client.post(
+            reverse("device-screen-request", kwargs={"device_id": device_id}),
+            format="json",
+        )
+        assert second.status_code == status.HTTP_200_OK
+        assert second.data["id"] == session_id
+
+    def test_stale_requested_expires_on_pending(self, api_client):
+        monitored = _register(api_client, "scr-exp-kid@example.com", "Kid Exp")
+        monitor = _register(api_client, "scr-exp-parent@example.com", "Parent Exp")
+        device_id = _pair_device(
+            api_client,
+            monitored["tokens"],
+            monitor["tokens"],
+            ["screen"],
+            "fp-scr-exp",
+        )
+
+        _auth(api_client, monitor["tokens"])
+        req = api_client.post(
+            reverse("device-screen-request", kwargs={"device_id": device_id}),
+            format="json",
+        )
+        assert req.status_code == status.HTTP_201_CREATED
+        session_id = req.data["id"]
+
+        session = ScreenShareSession.objects.get(pk=session_id)
+        session.requested_at = timezone.now() - REQUEST_TTL - timedelta(seconds=5)
+        session.save(update_fields=["requested_at"])
+
+        _auth(api_client, monitored["tokens"])
+        pending = api_client.get(
+            reverse("device-screen-pending", kwargs={"device_id": device_id})
+        )
+        assert pending.status_code == status.HTTP_200_OK
+        assert pending.data["results"] == []
+        session.refresh_from_db()
+        assert session.status == ScreenShareSession.Status.EXPIRED
+        assert AuditLog.objects.filter(
+            resource_id=device_id, action="screen_share.expired"
+        ).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+class TestScreenShareConsumer:
+    def _setup_active_session(self, api_client, kid_email, parent_email, fp):
+        monitored = _register(api_client, kid_email, "Kid WS")
+        monitor = _register(api_client, parent_email, "Parent WS")
+        device_id = _pair_device(
+            api_client,
+            monitored["tokens"],
+            monitor["tokens"],
+            ["screen"],
+            fp,
+        )
+        _auth(api_client, monitor["tokens"])
+        req = api_client.post(
+            reverse("device-screen-request", kwargs={"device_id": device_id}),
+            format="json",
+        )
+        assert req.status_code == status.HTTP_201_CREATED
+        session_id = req.data["id"]
+        _auth(api_client, monitored["tokens"])
+        start = api_client.post(
+            reverse("device-screen-start", kwargs={"session_id": session_id}),
+            format="json",
+        )
+        assert start.status_code == status.HTTP_200_OK
+        return monitored, monitor, device_id, session_id
+
+    def test_end_mid_session_closes_stream(self, api_client):
+        monitored, monitor, _device_id, session_id = self._setup_active_session(
+            api_client,
+            "scr-ws-end-kid@example.com",
+            "scr-ws-end-parent@example.com",
+            "fp-scr-ws-end",
+        )
+        token = monitored["tokens"]["access"]
+        parent_email = "scr-ws-end-parent@example.com"
+
+        async def _run():
+            communicator = WebsocketCommunicator(
+                application, _ws_path(session_id, token)
+            )
+            connected, _ = await communicator.connect()
+            assert connected is True
+            ready = json.loads(await communicator.receive_from())
+            assert ready["type"] == "screen.ready"
+            assert ready["role"] == "publisher"
+
+            parent = await sync_to_async(User.objects.get)(email=parent_email)
+            await sync_to_async(ScreenShareService().end_session)(
+                user=parent, session_id=session_id, reason="done"
+            )
+
+            closed = json.loads(await communicator.receive_from())
+            assert closed["type"] == "screen.closed"
+            # Close frame from consumer; ignore further.
+            try:
+                await communicator.receive_output(timeout=1)
+            except Exception:
+                pass
+            await communicator.disconnect()
+
+        asyncio.run(_run())
+        assert ScreenShareSession.objects.get(pk=session_id).status == "ended"
+
+    def test_revoke_mid_session_closes_stream(self, api_client):
+        monitored, _monitor, device_id, session_id = self._setup_active_session(
+            api_client,
+            "scr-ws-rev-kid@example.com",
+            "scr-ws-rev-parent@example.com",
+            "fp-scr-ws-rev",
+        )
+        token = monitored["tokens"]["access"]
+
+        async def _run():
+            communicator = WebsocketCommunicator(
+                application, _ws_path(session_id, token)
+            )
+            connected, _ = await communicator.connect()
+            assert connected is True
+            ready = json.loads(await communicator.receive_from())
+            assert ready["type"] == "screen.ready"
+
+            def _revoke():
+                device = Device.objects.get(pk=device_id)
+                ConsentRecord.objects.filter(
+                    device=device, revoked_at__isnull=True
+                ).update(revoked_at=timezone.now())
+                ConsentRecord.objects.create(
+                    tenant=device.tenant,
+                    device=device,
+                    granted_by=device.owner,
+                    scopes=["location"],
+                    consent_version="1.0.0",
+                )
+                ScreenShareService().terminate_open_for_device(
+                    device, reason="consent_revoked"
+                )
+
+            await sync_to_async(_revoke)()
+
+            closed = json.loads(await communicator.receive_from())
+            assert closed["type"] == "screen.closed"
+            assert closed["reason"] == "consent_revoked"
+            try:
+                await communicator.receive_output(timeout=1)
+            except Exception:
+                pass
+            await communicator.disconnect()
+
+        asyncio.run(_run())
+        assert ScreenShareSession.objects.get(pk=session_id).status == "ended"

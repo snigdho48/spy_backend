@@ -106,6 +106,13 @@ class SharingPauseService:
                 "reason": pause.reason,
             },
         )
+        # Kick any live screen-share streams for this device.
+        from apps.devices.application.services.screen_share_service import (
+            ScreenShareService,
+        )
+        ScreenShareService().terminate_open_for_device(
+            device, reason="paused", actor=user
+        )
         self._broadcast_status(device)
         return pause
 

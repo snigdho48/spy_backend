@@ -29,14 +29,14 @@ class ScreenShareRequestView(_TenantMixin, APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, device_id):
-        session = ScreenShareService().request_session(
+        session, created = ScreenShareService().request_session(
             user=request.user,
             tenant=self.get_tenant(),
             device_id=device_id,
         )
         return Response(
             ScreenShareSessionSerializer(session).data,
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
 
@@ -51,6 +51,7 @@ class OwnedScreenSharePendingView(APIView):
         device = Device.objects.filter(owner=request.user, pk=device_id).first()
         if not device:
             raise EntityNotFoundError("Device not found")
+        ScreenShareService().expire_stale_requested(device=device)
         sessions = ScreenShareSession.objects.filter(
             device=device,
             status__in=[

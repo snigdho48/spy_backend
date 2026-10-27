@@ -1,22 +1,12 @@
-"""Live screen-share WebSocket transport.
+"""Channels consumer for live screen-share frame relay.
 
-Route: ``ws/v1/screen/<session_id>/?token=<jwt>``
-
-Frames and WebRTC signaling flow through a per-session Channels group. Nothing
-here is written to the durable ``events_device_event`` table — this is a live
-relay only. The monitored device (the session's device owner) is the sole
-publisher; tenant monitors are viewers. Every connection is re-gated on:
-
-  * a valid JWT user who is either the device owner or a tenant monitor,
-  * the session being open (requested/active),
-  * an active ``screen`` consent scope, and
-  * the device not being in a sharing pause.
-
-Payloads accepted from the publisher:
-  {"type": "screen.frame",  "data": {"jpeg_b64": "...", "w": 720, "h": 1480}}
-  {"type": "screen.signal", "data": {...}}   # optional WebRTC signaling
-Both are rebroadcast to the group as-is (plus the session id).
+Authorization (consent, pause, session open, tenant role) is checked at
+connect AND re-checked on inbound frames. REST end / consent revoke / pause
+also ``group_send`` a ``screen.closed`` event that kicks every socket in the
+``screen_<id>`` group — so a mid-session revoke cannot keep streaming.
 """
+
+from __future__ import annotations
 
 import json
 import time
@@ -91,6 +81,12 @@ class ScreenShareConsumer(AsyncWebsocketConsumer):
         if msg_type not in ALLOWED_FRAME_TYPES:
             return
 
+        # Defence in depth: re-gate consent / pause / open on every publish.
+        role = await self._session_role(self.user)
+        if role != "publisher":
+            await self.close(code=4003)
+            return
+
         if msg_type == "screen.frame" and not self._allow_frame():
             return
 
@@ -112,6 +108,17 @@ class ScreenShareConsumer(AsyncWebsocketConsumer):
         if event.get("sender") == self.channel_name:
             return
         await self.send(text_data=json.dumps(event["payload"]))
+
+    async def screen_closed(self, event):
+        """Kicked by REST end / consent revoke / pause / expire."""
+        reason = event.get("reason") or "closed"
+        try:
+            await self.send(
+                text_data=json.dumps({"type": "screen.closed", "reason": reason})
+            )
+        except Exception:
+            pass
+        await self.close(code=4003)
 
     def _allow_frame(self) -> bool:
         now = time.monotonic()
@@ -166,7 +173,7 @@ class ScreenShareConsumer(AsyncWebsocketConsumer):
             return None
 
         device = session.device
-        # Consent + pause re-checked at connect time (revocable, consent-first).
+        # Consent + pause re-checked (revocable, consent-first).
         consent = ConsentService().get_active_consent(device)
         if not consent or not consent.has_scope(SCREEN_SCOPE):
             return None
