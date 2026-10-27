@@ -48,7 +48,7 @@ flowchart TB
 Notes:
 - Redis is optional. With `USE_REDIS=false` the cache is locmem, the channel layer is in-memory and Celery runs eager.
 - Celery is wired (`config` app + `celery` service in `infra/docker-compose.yml`) but **no task modules exist yet**; nothing is dispatched to Celery today.
-- There is **no separate web monitoring dashboard** yet. The Flutter app (`spy_love/`) contains both the monitored-device and monitor flows.
+- There is **no separate web monitoring dashboard** yet. The Flutter app (`spy_love/`, separate spy_app repository) contains both the monitored-device and monitor flows. See [Flutter architecture](../clients/FLUTTER_ARCHITECTURE.md).
 - Prometheus and Grafana are provisioned in `infra/docker-compose.yml`; OpenTelemetry/Loki are not.
 
 ## Backend Clean Architecture Layers (Implemented)

@@ -2,13 +2,13 @@
 
 > **Status:** a local / single-host stack exists in `infra/`. The DigitalOcean, Kubernetes, Cloudflare and GitLab CI/CD sections are **planned / not implemented** (no `.gitlab-ci.yml`, `.do/` specs or K8s manifests in the repo).
 
-**Before shipping:** follow the concrete steps in [docs/RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md) (prod settings, MySQL backups, HTTPS/WSS, health probes, Android signing, smoke: pair → ingest → pause/resume → safe zone → revoke).
+**Before shipping:** follow the concrete steps in [docs/operations/RELEASE_CHECKLIST.md](../operations/RELEASE_CHECKLIST.md) (prod settings, MySQL backups, HTTPS/WSS, health probes, Android signing, smoke: pair → ingest → pause/resume → safe zone → revoke).
 
 ## Implemented: Local & Docker Compose
 
 | Path | Purpose |
 |------|---------|
-| `backend/scripts/setup-local.ps1` | No-Docker local setup (MySQL 8+, venv, migrate) with `USE_REDIS=false` |
+| `scripts/setup-local.ps1` | No-Docker local setup (MySQL 8+, venv, migrate) with `USE_REDIS=false` |
 | `infra/docker-compose.yml` | MySQL 8.4 (`utf8mb4`), Redis 7, API (daphne via `infra/docker/Dockerfile.api`), Celery worker (`celery -A config worker`), Nginx 1.27, Prometheus 2.54, Grafana 11.2 |
 | `infra/nginx/nginx.conf` | Reverse proxy for API/WebSocket |
 | `infra/prometheus/prometheus.yml` | Prometheus scrape config |

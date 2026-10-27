@@ -6,7 +6,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+# This file lives in <repo>/scripts, so the parent directory is the repository root.
+$Root = Split-Path $PSScriptRoot -Parent
 $Backend = Join-Path $Root "backend"
 $VenvPython = Join-Path $Root "venv\Scripts\python.exe"
 $SqlFile = Join-Path $PSScriptRoot "setup_mysql.sql"

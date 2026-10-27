@@ -1,12 +1,12 @@
 # Spy Love
 
-Consent-based device monitoring platform. Pairing, scoped consent, event ingestion, real-time streams, sharing pause, safe zones, and keyword watchlists are implemented. Enterprise-scale and compliance items stay in the architecture docs as planned.
+Consent-based device monitoring platform. This repository holds the Django API, local infrastructure, and docs. Pairing, scoped consent, event ingestion, real-time streams, sharing pause, safe zones, and keyword watchlists are implemented. Enterprise-scale and compliance items stay in the architecture docs as planned.
 
 ## Stack
 
 | Layer | Technology (implemented) |
 |-------|--------------------------|
-| Mobile | Flutter (`spy_love/`), **Consent Horizon** UI, `provider`, `AppNavigator`, `one_request` |
+| Mobile | Flutter (**Consent Horizon** UI) in the separate spy_app repository (`spy_love/`) |
 | Backend | Django 5.1+, DRF, Channels (daphne), simplejwt (+ blacklist), Argon2 |
 | Async | Celery configured in Compose but **no task modules yet**; event fan-out uses a background thread + Channels `group_send` |
 | Database | MySQL 8+ (Compose: MySQL 8.4) |
@@ -19,7 +19,7 @@ Consent-based device monitoring platform. Pairing, scoped consent, event ingesti
 
 ## Product surface (current)
 
-**Mobile UI** — Stitch “Consent Horizon” design (tokens, Inter typography, responsive breakpoints: compact `<600`, medium `<1024`, expanded `≥1024`). See [Flutter Architecture](docs/architecture/FLUTTER_ARCHITECTURE.md) and `spy_love/.cursor/stitch-phase1/`.
+**Mobile UI** — Stitch “Consent Horizon” design (tokens, Inter typography, responsive breakpoints: compact `<600`, medium `<1024`, expanded `≥1024`). See [Flutter Architecture](docs/clients/FLUTTER_ARCHITECTURE.md).
 
 **Consent behavior**
 
@@ -44,56 +44,73 @@ Ensure the MySQL service is running.
 
 ### 2. Backend
 
+From the repository root:
+
 ```powershell
-cd D:\Spy_LOve\backend\scripts
-.\setup-local.ps1
+.\scripts\setup-local.ps1
 ```
 
-Or manually:
+Or manually (expects a virtualenv at `venv/`):
 
 ```powershell
-cd D:\Spy_LOve\backend
+cd backend
 ..\venv\Scripts\pip.exe install -r requirements\dev.txt
 ..\venv\Scripts\python.exe manage.py migrate
 ..\venv\Scripts\python.exe manage.py runserver
 ```
 
-Copy `backend\.env.example` to `backend\.env` if needed. Set `USE_REDIS=false` without Redis.  
+Copy `backend/.env.example` to `backend/.env` if needed. Set `USE_REDIS=false` without Redis.
 Never commit `.env` or keystores.
 
 API docs: http://localhost:8000/api/v1/docs/
 
-### 3. Flutter
+### Tests
 
-```bash
-cd spy_love
-flutter pub get
-flutter run
+From `backend/` (SQLite via `config.settings.test`):
+
+```powershell
+..\venv\Scripts\python.exe -m pytest
+..\venv\Scripts\python.exe manage.py makemigrations --check --settings=config.settings.test
 ```
 
-Override API/WS with `--dart-define=API_BASE_URL=...` and `--dart-define=WS_BASE_URL=...` (see `spy_love/README.md`).
+### 3. Flutter
+
+The mobile app lives in the spy_app repository. Setup notes are in [Flutter Architecture](docs/clients/FLUTTER_ARCHITECTURE.md).
 
 ### Full stack (optional Docker)
 
-See `infra/docker-compose.yml` and [Deployment Plan](docs/architecture/DEPLOYMENT_PLAN.md).
+See `infra/docker-compose.yml`, `infra/.env.example`, and [Deployment Plan](docs/architecture/DEPLOYMENT_PLAN.md).
 
 ## Documentation
 
 | Doc | Purpose |
 |-----|---------|
-| [docs/architecture/](docs/architecture/) | System, DB, API, Flutter, security, deployment |
-| [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) | Production cut checklist (backend, mobile, security, smoke) |
-| [spy_love/README.md](spy_love/README.md) | App-specific setup and UI notes |
+| [docs/architecture/](docs/architecture/) | System, DB, API, security, deployment |
+| [docs/clients/FLUTTER_ARCHITECTURE.md](docs/clients/FLUTTER_ARCHITECTURE.md) | Consent Horizon client (spy_app repository) |
+| [docs/operations/RELEASE_CHECKLIST.md](docs/operations/RELEASE_CHECKLIST.md) | Production cut checklist (backend, mobile, security, smoke) |
 
 ## Project Structure
 
 ```
-Spy_LOve/
-├── backend/          # Django API (accounts, tenants, devices, events, audit)
-├── spy_love/         # Flutter app (Consent Horizon UI)
-├── infra/            # docker-compose, Nginx, Prometheus
-└── docs/             # Architecture + release checklist
+.
+├── backend/                 # Django project
+│   ├── apps/                # accounts, tenants, devices, events, audit
+│   ├── config/              # settings package, asgi, wsgi, urls, celery
+│   ├── core/                # shared domain, middleware, presentation
+│   ├── requirements/
+│   └── tests/               # pytest modules grouped by area
+├── docs/
+│   ├── architecture/
+│   ├── clients/
+│   └── operations/
+├── infra/                   # compose, image, nginx, prometheus
+│   ├── docker/
+│   ├── nginx/
+│   └── prometheus/
+└── scripts/                 # local MySQL + venv setup
 ```
+
+Inside each Django app, keep the existing layering: `presentation` → `application` → `domain` (where present) → `infrastructure`.
 
 ## License
 

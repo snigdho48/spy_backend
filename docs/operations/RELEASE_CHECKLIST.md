@@ -2,7 +2,7 @@
 
 Concrete, repo-specific steps before a production cut. Mark owner decisions as **TODO(user)**. Do not commit secrets, `.env`, or keystores.
 
-Related: [DEPLOYMENT_PLAN.md](architecture/DEPLOYMENT_PLAN.md), [SECURITY_MODEL.md](architecture/SECURITY_MODEL.md), [API_DESIGN.md](architecture/API_DESIGN.md).
+Related: [DEPLOYMENT_PLAN.md](../architecture/DEPLOYMENT_PLAN.md), [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md), [API_DESIGN.md](../architecture/API_DESIGN.md).
 
 ---
 
@@ -108,8 +108,9 @@ flutter build appbundle \
 - [ ] Run security tests from `backend/`:
 
 ```powershell
-cd D:\Spy_LOve\backend
-..\venv\Scripts\python.exe manage.py test tests.test_security_hardening tests.test_api_contract --settings=config.settings.test
+# from the repository root; settings come from backend/pytest.ini
+cd backend
+..\venv\Scripts\python.exe -m pytest tests/security tests/api
 ```
 
 - [ ] Confirm `photo_url` / `contact_photo_url` are https-only and the **server never fetches** those URLs (SSRF avoidance).
