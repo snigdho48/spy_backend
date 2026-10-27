@@ -1,0 +1,57 @@
+# Pre-swap overlay. deploy-spy.sh passes this with -p spy-test and
+# SPY_PROJECT_NAME=spy-test so volumes and the internal network stay off the
+# live project. Nginx is spy-test-nginx, never spy-nginx, so the tunnel keeps
+# sending traffic at the live container until the swap.
+#
+# Celery is profile-gated so the test path does not pay for a second worker.
+
+services:
+  mariadb:
+    container_name: spy-test-mariadb
+    mem_limit: 280m
+    memswap_limit: 280m
+    cpus: "0.50"
+    shm_size: 64mb
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=64M
+      - --innodb-buffer-pool-instances=1
+      - --max-connections=20
+      - --performance-schema=OFF
+      - --skip-name-resolve
+      - --disable-log-bin
+
+  redis:
+    container_name: spy-test-redis
+    mem_limit: 48m
+    memswap_limit: 48m
+    command:
+      - redis-server
+      - --maxmemory
+      - 16mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+
+  api:
+    container_name: spy-test-api
+    mem_limit: 320m
+    memswap_limit: 320m
+
+  celery:
+    container_name: spy-test-celery
+    profiles:
+      - exclude-from-test
+
+  nginx:
+    container_name: spy-test-nginx
+    mem_limit: 32m
+    memswap_limit: 32m
+    # Drop snigdho-net so this nginx cannot steal the tunnel's spy-nginx alias.
+    # Requires Docker Compose 2.24+ (!override).
+    networks: !override
+      internal: {}

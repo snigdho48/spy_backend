@@ -81,6 +81,17 @@ The mobile app lives in the spy_app repository. Setup notes are in [Flutter Arch
 
 See `infra/docker-compose.yml`, `infra/.env.example`, and [Deployment Plan](docs/architecture/DEPLOYMENT_PLAN.md).
 
+## Production (TX6 / Cloudflare tunnel)
+
+Lean ARM64 stack for an Armbian TX6 (Ubuntu 24.04, 4 cores, 3GB RAM) that already runs the portfolio tunnel. Public site: **https://spy.way2points.com**. Services: MariaDB, Redis, Daphne, Celery, and `spy-nginx`. Prometheus and Grafana stay in the dev compose file.
+
+The Cloudflare tunnel is dashboard-managed. Add a public hostname and do not edit tunnel config from these scripts:
+
+- Hostname: `spy.way2points.com`
+- Service: `http://spy-nginx:80` (container on the existing `snigdho-net` network)
+
+Runbook: [infra/deploy/README.md](infra/deploy/README.md). Portfolio containers (`snigdho-tunnel`, `snigdho-web`) are never stopped or recreated.
+
 ## Documentation
 
 | Doc | Purpose |
@@ -103,8 +114,10 @@ See `infra/docker-compose.yml`, `infra/.env.example`, and [Deployment Plan](docs
 │   ├── architecture/
 │   ├── clients/
 │   └── operations/
-├── infra/                   # compose, image, nginx, prometheus
+├── infra/                   # compose, image, nginx, prometheus, TX6 prod deploy
+│   ├── deploy/              # deploy-spy.sh, watcher, cron, runbook
 │   ├── docker/
+│   ├── env/                 # prod.env.example (no secrets)
 │   ├── nginx/
 │   └── prometheus/
 └── scripts/                 # local MySQL + venv setup

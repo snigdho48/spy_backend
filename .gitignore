@@ -3,7 +3,11 @@ spy_love/
 # Python env / caches
 venv/
 .venv/
-env/
+# Virtualenv directories. infra/env is a committed example, not a venv.
+/env/
+/backend/env/
+# Local copy of the generated prod env, if one is placed next to the example.
+infra/env/prod.env
 __pycache__/
 *.py[cod]
 .pytest_cache/

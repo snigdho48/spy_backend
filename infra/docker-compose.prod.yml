@@ -1,0 +1,262 @@
+# Lean Spy Love production stack for the TX6 (linux/arm64, ~3GB RAM).
+#
+# Project name comes from SPY_PROJECT_NAME (deploy-spy.sh sets "spy").
+# Volumes are prefixed by that name, so a spy-test overlay does not reuse data.
+#
+# Cloudflare (dashboard only — scripts do not edit the tunnel):
+#   Hostname: spy.way2points.com
+#   Service:  http://spy-nginx:80
+# spy-nginx is attached to the existing external network snigdho-net.
+# MariaDB, Redis, api, and celery stay on the project network only.
+#
+# No host ports. No Prometheus/Grafana. Memory limits are hard caps so a leak
+# is killed inside the spy cgroup instead of starving snigdho-web.
+
+name: ${SPY_PROJECT_NAME:-spy}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    platform: linux/arm64
+    pull_policy: if_not_present
+    container_name: ${SPY_DB_CONTAINER:-spy-mariadb}
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${MYSQL_DATABASE:-spylove}
+      MARIADB_USER: ${MYSQL_USER:-spylove}
+      MARIADB_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_INITDB_SKIP_TZINFO: "1"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=256M
+      - --innodb-buffer-pool-instances=1
+      - --innodb-log-buffer-size=8M
+      - --innodb-flush-log-at-trx-commit=2
+      - --innodb-flush-method=O_DIRECT
+      - --max-connections=40
+      - --table-open-cache=200
+      - --table-definition-cache=400
+      - --thread-cache-size=4
+      - --tmp-table-size=16M
+      - --max-heap-table-size=16M
+      - --key-buffer-size=8M
+      - --performance-schema=OFF
+      - --skip-name-resolve
+      - --disable-log-bin
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    shm_size: 128mb
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: "1.00"
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    platform: linux/arm64
+    pull_policy: if_not_present
+    container_name: ${SPY_REDIS_CONTAINER:-spy-redis}
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --maxmemory-samples
+      - "5"
+      - --save
+      - "300"
+      - "1"
+      - --appendonly
+      - "no"
+    volumes:
+      - redis_data:/data
+    mem_limit: 80m
+    memswap_limit: 80m
+    cpus: "0.25"
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - internal
+
+  api:
+    image: spy-api:${SPY_IMAGE_TAG:-latest}
+    platform: linux/arm64
+    pull_policy: never
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.api
+    container_name: ${SPY_API_CONTAINER:-spy-api}
+    user: appuser
+    restart: unless-stopped
+    env_file:
+      - path: ${SPY_ENV_FILE:?SPY_ENV_FILE is required}
+        required: true
+    environment:
+      MYSQL_HOST: mariadb
+      MYSQL_PORT: "3306"
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DEBUG: "False"
+      USE_REDIS: "true"
+      RUN_COLLECTSTATIC: "true"
+      HEALTHCHECK_HOST: spy.way2points.com
+      MALLOC_ARENA_MAX: "2"
+    command:
+      - daphne
+      - -b
+      - 0.0.0.0
+      - -p
+      - "8000"
+      - --proxy-headers
+      - config.asgi:application
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 420m
+    memswap_limit: 420m
+    cpus: "1.00"
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 20s
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "python", "/usr/local/bin/spy-healthcheck.py", "/health/live/", "alive"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+    networks:
+      - internal
+
+  celery:
+    image: spy-api:${SPY_IMAGE_TAG:-latest}
+    platform: linux/arm64
+    pull_policy: never
+    container_name: ${SPY_CELERY_CONTAINER:-spy-celery}
+    user: appuser
+    restart: unless-stopped
+    env_file:
+      - path: ${SPY_ENV_FILE:?SPY_ENV_FILE is required}
+        required: true
+    environment:
+      MYSQL_HOST: mariadb
+      MYSQL_PORT: "3306"
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DEBUG: "False"
+      USE_REDIS: "true"
+      SKIP_MIGRATIONS: "true"
+      RUN_COLLECTSTATIC: "false"
+      MALLOC_ARENA_MAX: "2"
+    command:
+      - celery
+      - -A
+      - config
+      - worker
+      - -l
+      - info
+      - --concurrency=1
+      - --prefetch-multiplier=1
+      - --max-tasks-per-child=50
+      - --without-heartbeat
+      - --without-gossip
+      - --without-mingle
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 280m
+    memswap_limit: 280m
+    cpus: "0.50"
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 20s
+    logging: *default-logging
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import pathlib,sys; cmd=pathlib.Path('/proc/1/cmdline').read_bytes(); sys.exit(0 if b'celery' in cmd else 1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:1.27-alpine
+    platform: linux/arm64
+    pull_policy: if_not_present
+    container_name: ${SPY_NGINX_CONTAINER:-spy-nginx}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+    mem_limit: 32m
+    memswap_limit: 32m
+    cpus: "0.25"
+    logging: *default-logging
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /tmp/spy-ready --header='Host: spy.way2points.com' --header='X-Forwarded-Proto: https' http://127.0.0.1/health/ready/ && grep -E -q '\"status\"[[:space:]]*:[[:space:]]*\"ready\"' /tmp/spy-ready",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      internal: {}
+      snigdho-net:
+        aliases:
+          - spy-nginx
+
+networks:
+  internal:
+    name: ${SPY_PROJECT_NAME:-spy}_internal
+    driver: bridge
+  snigdho-net:
+    external: true
+    name: snigdho-net
+
+volumes:
+  mariadb_data:
+  redis_data:

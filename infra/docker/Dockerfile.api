@@ -1,3 +1,5 @@
+# Official python images publish linux/amd64 and linux/arm64. Prod compose
+# pins platform: linux/arm64 so the TX6 never pulls an amd64 image.
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -15,8 +17,14 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 COPY backend /app
 
 COPY infra/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh \
-    && useradd --create-home --uid 1000 appuser
+COPY infra/docker/healthcheck.py /usr/local/bin/spy-healthcheck.py
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh /usr/local/bin/spy-healthcheck.py \
+    && chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/spy-healthcheck.py \
+    && useradd --create-home --uid 1000 appuser \
+    && mkdir -p /app/staticfiles \
+    && chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 8000
 
