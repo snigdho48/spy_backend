@@ -1,0 +1,46 @@
+﻿# Flutter app lives in its own repo (spy_app)
+spy_love/
+# Python env / caches
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+staticfiles/
+media/
+# Secrets
+.env
+.env.*
+!.env.example
+*.bak*
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+*credential*.json
+*service-account*.json
+*serviceAccount*.json
+secrets/
+# Local DBs
+*.sqlite3
+*.db
+db.sqlite3*
+# Logs
+*.log
+# Editors / tools
+.cursor/
+.qodo/
+.sentry-native/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+node_modules/
+build/
+dist/
+.dart_tool/
