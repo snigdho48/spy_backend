@@ -193,6 +193,9 @@ class DevicePairing(TenantScopedModel):
     class Meta:
         db_table = "devices_pairing"
 
+    def __str__(self) -> str:
+        return f"{self.status} pairing for {self.device_id}"
+
     @staticmethod
     def generate_code() -> str:
         chars = string.ascii_uppercase + string.digits
@@ -237,6 +240,10 @@ class ConsentRecord(TenantScopedModel):
         indexes = [
             models.Index(fields=["device", "revoked_at"]),
         ]
+
+    def __str__(self) -> str:
+        state = "active" if self.revoked_at is None else "revoked"
+        return f"{state} consent for {self.device_id}"
 
     @property
     def is_active(self) -> bool:

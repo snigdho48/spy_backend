@@ -27,3 +27,7 @@ class RefreshTokenRecord(BaseModel):
     @property
     def is_revoked(self) -> bool:
         return self.revoked_at is not None
+
+    def __str__(self) -> str:
+        state = "revoked" if self.revoked_at else "active"
+        return f"Refresh token {self.pk} ({state})"

@@ -37,6 +37,10 @@ Related: [DEPLOYMENT_PLAN.md](../architecture/DEPLOYMENT_PLAN.md), [SECURITY_MOD
 - [ ] Readiness probe: `GET /health/ready/` (DB reachable)
 - [ ] Optional: `GET /health/` as documented in compose / deployment plan
 
+### Django admin
+
+Staff sign in at `/admin/` (`python manage.py createsuperuser` prompts for email, the user model's `USERNAME_FIELD`). Concrete models in accounts, tenants, devices, events, and audit are registered on the default admin site with changelist filters and search. Password updates go through Django's admin password form. Refresh-token ids, pairing codes and tokens, and password hashes stay off changelist columns; device events and audit logs are inspect-only so operators can read payloads and metadata without rewriting history.
+
 ### Logs and audit retention
 
 - [ ] **TODO(user):** Define log retention (app / access / error) and shipping destination.
