@@ -384,6 +384,10 @@ cleanup_test_stack() {
 }
 
 run_test_stack() {
+  # Release BuildKit cache / dangling images so they don't hold memory while
+  # the live and test stacks run side by side. Never fatal.
+  docker builder prune -f >/dev/null 2>&1 || true
+  docker image prune -f >/dev/null 2>&1 || true
   TEST_UP=1
   echo "Starting throwaway spy-test stack (live spy project is left running)."
   if ! compose_project spy-test candidate up -d --no-build --force-recreate --remove-orphans; then
