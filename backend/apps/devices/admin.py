@@ -1,4 +1,4 @@
-"""Django admin for devices, consent, pairing, and screen share.
+"""Django admin for devices, consent, pairing, screen share, and live media.
 
 Pairing codes and pairing tokens are omitted from changelist columns.
 """
@@ -10,6 +10,7 @@ from apps.devices.models import (
     Device,
     DevicePairing,
     SafeZone,
+    LiveMediaSession,
     ScreenShareSession,
     SharingPause,
     WatchlistKeyword,
@@ -165,6 +166,33 @@ class ScreenShareSessionAdmin(admin.ModelAdmin):
         "ended_at",
     )
     list_filter = ("status", "tenant")
+    search_fields = (
+        "device__name",
+        "requested_by__email",
+        "ended_reason",
+        "tenant__name",
+    )
+    list_select_related = ("device", "requested_by", "tenant")
+    autocomplete_fields = ("device", "requested_by", "tenant")
+    readonly_fields = _IDENTITY_FIELDS
+    date_hierarchy = "requested_at"
+
+
+
+@admin.register(LiveMediaSession)
+class LiveMediaSessionAdmin(admin.ModelAdmin):
+    list_display = (
+        "device",
+        "media_kind",
+        "camera_facing",
+        "requested_by",
+        "tenant",
+        "status",
+        "requested_at",
+        "started_at",
+        "ended_at",
+    )
+    list_filter = ("status", "media_kind", "tenant")
     search_fields = (
         "device__name",
         "requested_by__email",
