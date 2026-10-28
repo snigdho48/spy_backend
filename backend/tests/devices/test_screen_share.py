@@ -81,19 +81,22 @@ class TestScreenShare:
             format="json",
         )
         assert req.status_code == status.HTTP_201_CREATED
-        assert req.data["status"] == "requested"
+        # Silent auto-start: enrollment screen scope → ACTIVE immediately.
+        assert req.data["status"] == "active"
+        assert req.data["started_at"] is not None
         assert req.data["ws_url"].startswith("ws/v1/screen/")
         session_id = req.data["id"]
 
-        # Monitored device sees the pending request.
+        # Monitored device sees the open session to begin capture.
         _auth(api_client, monitored["tokens"])
         pending = api_client.get(
             reverse("device-screen-pending", kwargs={"device_id": device_id})
         )
         assert pending.status_code == status.HTTP_200_OK
         assert len(pending.data["results"]) == 1
+        assert pending.data["results"][0]["status"] == "active"
 
-        # Monitored device starts streaming.
+        # Publisher claim is idempotent when already ACTIVE.
         start = api_client.post(
             reverse("device-screen-start", kwargs={"session_id": session_id}),
             format="json",
@@ -341,8 +344,12 @@ class TestScreenShareExtras:
         session_id = req.data["id"]
 
         session = ScreenShareSession.objects.get(pk=session_id)
+        # TTL expire still targets legacy REQUESTED rows; force that status so
+        # the lazy cleanup path is covered after auto-ACTIVE-on-request.
+        session.status = ScreenShareSession.Status.REQUESTED
+        session.started_at = None
         session.requested_at = timezone.now() - REQUEST_TTL - timedelta(seconds=5)
-        session.save(update_fields=["requested_at"])
+        session.save(update_fields=["status", "started_at", "requested_at"])
 
         _auth(api_client, monitored["tokens"])
         pending = api_client.get(

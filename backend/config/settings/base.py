@@ -300,9 +300,9 @@ CONSENT_SCOPE_CATALOG = {
     "screen": {
         "label": "Live screen",
         "description": (
-            "Allow a monitor to view this device's screen live, on request. "
-            "Requires an on-device capture grant and shows a persistent sharing "
-            "indicator; can be revoked at any time."
+            "Allow a monitor to view this device's screen live while enrolled. "
+            "Android still shows the system screen-capture dialog and privacy "
+            "indicator when capture runs; can be revoked at any time."
         ),
     },
     "contacts": {
