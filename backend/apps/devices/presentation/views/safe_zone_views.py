@@ -30,6 +30,7 @@ class SafeZoneListCreateView(APIView):
             radius_m=data.get("radius_m", 100),
             address=data.get("address", ""),
             device_id=data.get("device_id"),
+            enabled=data.get("enabled", True),
         )
         return Response(
             SafeZoneSerializer(zone).data, status=status.HTTP_201_CREATED

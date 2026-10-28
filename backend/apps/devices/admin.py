@@ -9,6 +9,7 @@ from apps.devices.models import (
     ConsentRecord,
     Device,
     DevicePairing,
+    GeofenceState,
     SafeZone,
     ScreenShareSession,
     SharingPause,
@@ -75,7 +76,7 @@ class WatchlistKeywordAdmin(admin.ModelAdmin):
 
 @admin.register(SafeZone)
 class SafeZoneAdmin(admin.ModelAdmin):
-    list_display = ("name", "tenant", "device", "radius_m", "lat", "lng", "created_by")
+    list_display = ("name", "tenant", "device", "radius_m", "enabled", "lat", "lng", "created_by")
     list_filter = ("tenant",)
     search_fields = ("name", "address", "tenant__name", "device__name", "created_by__email")
     list_select_related = ("tenant", "device", "created_by")
@@ -175,3 +176,12 @@ class ScreenShareSessionAdmin(admin.ModelAdmin):
     autocomplete_fields = ("device", "requested_by", "tenant")
     readonly_fields = _IDENTITY_FIELDS
     date_hierarchy = "requested_at"
+
+
+@admin.register(GeofenceState)
+class GeofenceStateAdmin(admin.ModelAdmin):
+    list_display = ("device", "safe_zone", "is_inside", "last_evaluated_at", "tenant")
+    list_filter = ("is_inside", "tenant")
+    search_fields = ("device__name", "safe_zone__name")
+    list_select_related = ("device", "safe_zone", "tenant")
+    readonly_fields = _IDENTITY_FIELDS

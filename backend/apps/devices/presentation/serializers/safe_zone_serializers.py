@@ -19,6 +19,7 @@ class SafeZoneSerializer(serializers.ModelSerializer):
             "lat",
             "lng",
             "radius_m",
+            "enabled",
             "device_id",
             "created_by_email",
             "display_label",
@@ -36,6 +37,7 @@ class SafeZoneWriteSerializer(serializers.Serializer):
     lat = serializers.FloatField()
     lng = serializers.FloatField()
     radius_m = serializers.IntegerField(required=False, default=100)
+    enabled = serializers.BooleanField(required=False, default=True)
     device_id = serializers.UUIDField(required=False, allow_null=True)
 
 
@@ -47,4 +49,5 @@ class SafeZonePatchSerializer(serializers.Serializer):
     lat = serializers.FloatField(required=False)
     lng = serializers.FloatField(required=False)
     radius_m = serializers.IntegerField(required=False)
+    enabled = serializers.BooleanField(required=False)
     device_id = serializers.UUIDField(required=False, allow_null=True)

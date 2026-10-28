@@ -78,6 +78,7 @@ class SafeZoneService:
         radius_m: int = 100,
         address: str = "",
         device_id: UUID | None = None,
+        enabled: bool = True,
     ) -> SafeZone:
         membership = self._require_manage_membership(user)
         tenant = membership.tenant
@@ -100,6 +101,7 @@ class SafeZoneService:
             lat=cleaned["lat"],
             lng=cleaned["lng"],
             radius_m=cleaned["radius_m"],
+            enabled=bool(enabled),
             created_by=user,
             device=device,
         )
@@ -165,6 +167,8 @@ class SafeZoneService:
         zone.lat = cleaned["lat"]
         zone.lng = cleaned["lng"]
         zone.radius_m = cleaned["radius_m"]
+        if "enabled" in fields:
+            zone.enabled = bool(fields["enabled"])
         zone.save()
 
         AuditService().log(

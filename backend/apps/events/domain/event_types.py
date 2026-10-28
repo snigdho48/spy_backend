@@ -23,6 +23,7 @@ class EventPrefixes:
     DEVICE_INFO = "device_info"
     SIM = "sim"
     DEVICE = "device"
+    SOS = "sos"
 
 
 class EventTypes:
@@ -53,6 +54,8 @@ class EventTypes:
 
     # Phase 1 additions
     DEVICE_TELEMETRY = "device.telemetry"
+    SIM_CHANGED = "sim.changed"
+    SOS_TRIGGERED = "sos.triggered"
 
 
 # Prefixes that carry call/sms contact *metadata* (not address-book snapshots).
