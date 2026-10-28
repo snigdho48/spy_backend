@@ -24,3 +24,4 @@ opentelemetry-instrumentation-django>=0.50b0
 whitenoise>=6.8,<7.0
 django-prometheus>=2.3,<3.0
 reportlab>=4.2,<5.0
+pyotp>=2.9,<3.0

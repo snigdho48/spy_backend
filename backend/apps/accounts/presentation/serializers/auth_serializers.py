@@ -70,6 +70,38 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return token
 
     def validate(self, attrs):
+        # Authenticate first so we can branch before issuing JWTs when 2FA is on.
+        authenticate_kwargs = {
+            self.username_field: attrs[self.username_field],
+            "password": attrs["password"],
+        }
+        self.user = self.context["request"].user  # placeholder cleared below
+        from django.contrib.auth import authenticate as dj_authenticate
+
+        request = self.context.get("request")
+        self.user = dj_authenticate(request=request, **authenticate_kwargs)
+        if self.user is None or not self.user.is_active:
+            from rest_framework_simplejwt.exceptions import AuthenticationFailed
+            from django.utils.translation import gettext_lazy as _
+
+            raise AuthenticationFailed(
+                _("No active account found with the given credentials"),
+                "no_active_account",
+            )
+
+        if getattr(self.user, "totp_enabled", False):
+            from apps.accounts.application.services.totp_service import TotpService
+
+            return {
+                "requires_2fa": True,
+                "pre_auth_token": TotpService().issue_pre_auth_token(self.user),
+                "user": {
+                    "id": self.user.id,
+                    "email": self.user.email,
+                    "full_name": self.user.full_name,
+                },
+            }
+
         data = super().validate(attrs)
         data["user"] = {
             "id": self.user.id,
@@ -99,4 +131,19 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         from apps.accounts.application.services.google_auth_service import GoogleAuthService
 
         data["auth_methods"] = GoogleAuthService().get_auth_methods(self.user)
+        data["requires_2fa"] = False
         return data
+
+
+class TotpCodeSerializer(serializers.Serializer):
+    code = serializers.CharField(min_length=6, max_length=16)
+
+
+class TotpDisableSerializer(serializers.Serializer):
+    password = serializers.CharField(required=False, allow_blank=True)
+    code = serializers.CharField(required=False, allow_blank=True, max_length=16)
+
+
+class TotpVerifyLoginSerializer(serializers.Serializer):
+    pre_auth_token = serializers.CharField()
+    code = serializers.CharField(min_length=6, max_length=16)

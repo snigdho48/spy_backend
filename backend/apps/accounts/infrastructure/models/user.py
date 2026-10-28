@@ -26,6 +26,11 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     is_active = models.BooleanField(default=True, db_index=True)
     is_staff = models.BooleanField(default=False)
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
+    # TOTP 2FA — secret stored Fernet-encrypted (enc:v1:…); never expose plaintext in APIs
+    # except during enroll.
+    totp_secret_encrypted = models.CharField(max_length=255, blank=True, default="")
+    totp_enabled = models.BooleanField(default=False, db_index=True)
+    totp_confirmed_at = models.DateTimeField(null=True, blank=True)
 
     objects = UserManager()
 

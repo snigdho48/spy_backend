@@ -72,6 +72,7 @@ class MeView(APIView):
             },
             "auth_methods": google_service.get_auth_methods(user),
             "needs_workspace": membership is None,
+            "totp_enabled": bool(user.totp_enabled),
         }
         if membership:
             tenant = membership.tenant
