@@ -5,6 +5,7 @@ from apps.events.presentation.views.event_views import (
     AppUsageLatestView,
     AppUsageRangeView,
     ContactSnapshotLatestView,
+    DeviceExportView,
     EventIngestView,
     EventListView,
     TelemetryHistoryView,
@@ -12,6 +13,11 @@ from apps.events.presentation.views.event_views import (
 )
 
 urlpatterns = [
+    path(
+        "export/",
+        DeviceExportView.as_view(),
+        name="event-export",
+    ),
     path("", EventListView.as_view(), name="event-list"),
     path("batch/", EventIngestView.as_view(), name="event-ingest"),
     path(

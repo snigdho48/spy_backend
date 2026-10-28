@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -270,3 +271,61 @@ class TelemetryHistoryView(_DeviceFeedView):
             for event in events
         ]
         return Response({"device_id": str(device.id), "results": results})
+
+
+class DeviceExportView(TenantMixin, APIView):
+    """Export a device's feeds as CSV (streamed) or PDF.
+
+    Query params:
+      device_id (required), from, to (ISO-8601),
+      feeds=events,locations,app_usage,alerts,telemetry
+      export_format=csv|pdf (default csv; alias: fmt)
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.http import HttpResponse, StreamingHttpResponse
+
+        from apps.events.application.services.export_service import (
+            DeviceExportService,
+        )
+
+        tenant = self.get_tenant()
+        device_id = request.query_params.get("device_id")
+        if not device_id:
+            raise ValidationError("device_id is required")
+        svc = DeviceExportService()
+        device = svc.resolve_device(
+            user=request.user, tenant=tenant, device_id=device_id
+        )
+        start, end = svc.parse_range(
+            request.query_params.get("from"), request.query_params.get("to")
+        )
+        feeds = svc.parse_feeds(request.query_params.get("feeds"))
+        # Use export_format — DRF reserves ?format= for content negotiation.
+        fmt = (
+            request.query_params.get("export_format")
+            or request.query_params.get("fmt")
+            or "csv"
+        ).lower()
+        stamp = timezone.now().strftime("%Y%m%d")
+        filename = f"device-{device.id}-{stamp}.{fmt}"
+
+        if fmt == "csv":
+            response = StreamingHttpResponse(
+                svc.stream_csv(
+                    device=device, feeds=feeds, start=start, end=end
+                ),
+                content_type="text/csv; charset=utf-8",
+            )
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            return response
+        if fmt == "pdf":
+            pdf_bytes = svc.build_pdf_bytes(
+                device=device, feeds=feeds, start=start, end=end
+            )
+            response = HttpResponse(pdf_bytes, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            return response
+        raise ValidationError("export_format must be csv or pdf")
