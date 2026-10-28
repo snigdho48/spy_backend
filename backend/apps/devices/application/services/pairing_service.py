@@ -139,13 +139,21 @@ class DevicePairingService:
                 ip_address=ctx.get("ip_address"),
             )
 
-            # If the new consent dropped the screen scope, kick live streams.
-            if "screen" not in (consent.scopes or []):
+            # If the new consent dropped live scopes, kick streams.
+            scopes = set(consent.scopes or [])
+            if "screen" not in scopes:
                 from apps.devices.application.services.screen_share_service import (
                     ScreenShareService,
                 )
                 ScreenShareService().terminate_open_for_device(
                     device, reason="consent_revoked", actor=user
+                )
+            if "camera" not in scopes or "microphone" not in scopes:
+                from apps.devices.application.services.live_media_service import (
+                    LiveMediaService,
+                )
+                LiveMediaService().close_open_sessions_for_device(
+                    device, reason="consent_revoked"
                 )
 
         AuditService().log(

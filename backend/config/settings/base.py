@@ -279,6 +279,8 @@ VALID_CONSENT_SCOPES = frozenset({
     "sim",
     "screen",
     "contacts",
+    "camera",
+    "microphone",
 })
 
 # Human-facing catalog for the consent scopes above: a clear label and
@@ -306,6 +308,20 @@ CONSENT_SCOPE_CATALOG = {
     "contacts": {
         "label": "Contacts",
         "description": "Address-book names, phone numbers, and emails (snapshot).",
+    },
+    "camera": {
+        "label": "Live camera",
+        "description": (
+            "Allow a monitor to view this device's camera live while enrolled. "
+            "The Android privacy indicator (green dot) still appears; revoke anytime."
+        ),
+    },
+    "microphone": {
+        "label": "Live microphone",
+        "description": (
+            "Allow a monitor to hear this device's microphone live while enrolled. "
+            "The Android privacy indicator still appears; revoke anytime."
+        ),
     },
 }
 
