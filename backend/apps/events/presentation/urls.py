@@ -1,6 +1,7 @@
 from django.urls import path
 
 from apps.events.presentation.views.event_views import (
+    ActivityFeedView,
     AppInventorySnapshotLatestView,
     AppUsageLatestView,
     AppUsageRangeView,
@@ -19,6 +20,11 @@ urlpatterns = [
         name="event-export",
     ),
     path("", EventListView.as_view(), name="event-list"),
+    path(
+        "activity/",
+        ActivityFeedView.as_view(),
+        name="event-activity",
+    ),
     path("batch/", EventIngestView.as_view(), name="event-ingest"),
     path(
         "contacts/latest/",
