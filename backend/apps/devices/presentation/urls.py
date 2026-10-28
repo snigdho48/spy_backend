@@ -24,6 +24,14 @@ from apps.devices.presentation.views.screen_share_views import (
     ScreenShareStartView,
     ScreenShareStatusView,
 )
+from apps.devices.presentation.views.live_media_views import (
+    LiveMediaEndView,
+    LiveMediaFacingView,
+    LiveMediaRequestView,
+    LiveMediaStartView,
+    LiveMediaStatusView,
+    OwnedLiveMediaPendingView,
+)
 from apps.devices.presentation.views.safe_zone_views import (
     SafeZoneDetailView,
     SafeZoneListCreateView,
@@ -90,6 +98,36 @@ urlpatterns = [
         "screen/<uuid:session_id>/",
         ScreenShareStatusView.as_view(),
         name="device-screen-status",
+    ),
+    path(
+        "<uuid:device_id>/media/request/",
+        LiveMediaRequestView.as_view(),
+        name="device-media-request",
+    ),
+    path(
+        "owned/<uuid:device_id>/media/pending/",
+        OwnedLiveMediaPendingView.as_view(),
+        name="device-media-pending",
+    ),
+    path(
+        "media/<uuid:session_id>/start/",
+        LiveMediaStartView.as_view(),
+        name="device-media-start",
+    ),
+    path(
+        "media/<uuid:session_id>/facing/",
+        LiveMediaFacingView.as_view(),
+        name="device-media-facing",
+    ),
+    path(
+        "media/<uuid:session_id>/end/",
+        LiveMediaEndView.as_view(),
+        name="device-media-end",
+    ),
+    path(
+        "media/<uuid:session_id>/",
+        LiveMediaStatusView.as_view(),
+        name="device-media-status",
     ),
     path("<uuid:device_id>/", DeviceDetailView.as_view(), name="device-detail"),
     path("<uuid:device_id>/disconnect/", DeviceDisconnectView.as_view(), name="device-disconnect"),
