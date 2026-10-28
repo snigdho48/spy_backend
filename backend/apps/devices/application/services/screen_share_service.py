@@ -234,20 +234,25 @@ class ScreenShareService:
         if existing:
             return existing, False
 
+        # Enrollment `screen` scope already gates access — no per-session
+        # approval handshake. Open as ACTIVE so the monitored device can
+        # begin capture silently (OS MediaProjection dialog still required).
         now = timezone.now()
         with transaction.atomic():
             session = ScreenShareSession.objects.create(
                 tenant=device.tenant,
                 device=device,
                 requested_by=user,
-                status=ScreenShareSession.Status.REQUESTED,
+                status=ScreenShareSession.Status.ACTIVE,
                 requested_at=now,
+                started_at=now,
             )
-        self._audit(session, user, "screen_share.requested")
+        self._audit(session, user, "screen_share.requested", {"auto_active": True})
+        self._audit(session, user, "screen_share.started", {"auto_active": True})
         return session, True
 
     def start_session(self, *, user: User, session_id) -> ScreenShareSession:
-        """Monitored device owner accepts the request and begins streaming."""
+        """Publisher claim / idempotent confirm. Sessions open as ACTIVE on request."""
         self.expire_stale_requested()
         session = (
             ScreenShareSession.objects.filter(pk=session_id)
@@ -256,6 +261,11 @@ class ScreenShareService:
         )
         if not session or session.device.owner_id != user.id:
             raise EntityNotFoundError("Screen share session not found")
+        if session.status == ScreenShareSession.Status.ACTIVE:
+            device = session.device
+            self._require_screen_consent(device)
+            self._require_not_paused(device)
+            return session
         if session.status != ScreenShareSession.Status.REQUESTED:
             raise ConflictError("Session is not awaiting start")
 
@@ -279,8 +289,11 @@ class ScreenShareService:
         )
         if not session or session.device.owner_id != user.id:
             raise EntityNotFoundError("Screen share session not found")
-        if session.status != ScreenShareSession.Status.REQUESTED:
-            raise ConflictError("Session is not awaiting start")
+        if session.status not in (
+            ScreenShareSession.Status.REQUESTED,
+            ScreenShareSession.Status.ACTIVE,
+        ):
+            raise ConflictError("Session cannot be declined")
 
         now = timezone.now()
         session.status = ScreenShareSession.Status.DENIED

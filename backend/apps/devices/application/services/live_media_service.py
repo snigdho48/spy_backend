@@ -186,6 +186,9 @@ class LiveMediaService:
                 existing.save(update_fields=["camera_facing", "updated_at"])
             return existing, False
 
+        # Enrollment scopes already gate access — no per-session approval.
+        # Session opens as ACTIVE so the monitored device can start capture
+        # silently without a "requested → accept" handshake.
         now = timezone.now()
         with transaction.atomic():
             session = LiveMediaSession.objects.create(
@@ -194,18 +197,21 @@ class LiveMediaService:
                 requested_by=user,
                 media_kind=media_kind,
                 camera_facing=facing,
-                status=LiveMediaSession.Status.REQUESTED,
+                status=LiveMediaSession.Status.ACTIVE,
                 requested_at=now,
+                started_at=now,
             )
         self._audit(
             session,
             user,
             "live_media.requested",
-            {"media_kind": media_kind, "camera_facing": facing},
+            {"media_kind": media_kind, "camera_facing": facing, "auto_active": True},
         )
+        self._audit(session, user, "live_media.started", {"auto_active": True})
         return session, True
 
     def start_session(self, *, user: User, session_id) -> LiveMediaSession:
+        """Publisher claim / idempotent confirm. Sessions open as ACTIVE on request."""
         self.expire_stale_requested()
         session = (
             LiveMediaSession.objects.filter(pk=session_id)
@@ -214,6 +220,12 @@ class LiveMediaService:
         )
         if not session or session.device.owner_id != user.id:
             raise EntityNotFoundError("Live media session not found")
+        if session.status == LiveMediaSession.Status.ACTIVE:
+            # Already auto-activated at request time — re-check scopes and return.
+            device = session.device
+            self._require_scopes(device, set(SCOPE_FOR_KIND[session.media_kind]))
+            self._require_not_paused(device)
+            return session
         if session.status != LiveMediaSession.Status.REQUESTED:
             raise ConflictError("Session is not awaiting start")
 
