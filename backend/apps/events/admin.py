@@ -9,8 +9,10 @@ from django.contrib import admin
 
 from apps.events.models import (
     DeviceAppInventorySnapshot,
+    DeviceAppUsageSnapshot,
     DeviceContactSnapshot,
     DeviceEvent,
+    DeviceTelemetrySnapshot,
 )
 
 
@@ -91,4 +93,29 @@ class DeviceAppInventorySnapshotAdmin(_SnapshotAdmin):
     search_fields = ("device__name",)
     readonly_fields = tuple(
         field.name for field in DeviceAppInventorySnapshot._meta.concrete_fields
+    )
+
+
+@admin.register(DeviceAppUsageSnapshot)
+class DeviceAppUsageSnapshotAdmin(_SnapshotAdmin):
+    list_display = ("device", "tenant", "app_count", "captured_at", "updated_at")
+    search_fields = ("device__name",)
+    readonly_fields = tuple(
+        field.name for field in DeviceAppUsageSnapshot._meta.concrete_fields
+    )
+
+
+@admin.register(DeviceTelemetrySnapshot)
+class DeviceTelemetrySnapshotAdmin(_SnapshotAdmin):
+    list_display = (
+        "device",
+        "tenant",
+        "battery_pct",
+        "charging",
+        "network_type",
+        "captured_at",
+    )
+    search_fields = ("device__name",)
+    readonly_fields = tuple(
+        field.name for field in DeviceTelemetrySnapshot._meta.concrete_fields
     )

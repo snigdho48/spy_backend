@@ -22,6 +22,7 @@ class EventPrefixes:
     NETWORK = "network"
     DEVICE_INFO = "device_info"
     SIM = "sim"
+    DEVICE = "device"
 
 
 class EventTypes:
@@ -49,6 +50,9 @@ class EventTypes:
     LOCATION_SNAPSHOT = "location.snapshot"
     CALL_LOG = "call.log"
     SMS_RECEIVED = "sms.received"
+
+    # Phase 1 additions
+    DEVICE_TELEMETRY = "device.telemetry"
 
 
 # Prefixes that carry call/sms contact *metadata* (not address-book snapshots).

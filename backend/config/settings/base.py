@@ -279,6 +279,7 @@ VALID_CONSENT_SCOPES = frozenset({
     "sim",
     "screen",
     "contacts",
+    "telemetry",
 })
 
 # Human-facing catalog for the consent scopes above: a clear label and
@@ -306,6 +307,10 @@ CONSENT_SCOPE_CATALOG = {
     "contacts": {
         "label": "Contacts",
         "description": "Address-book names, phone numbers, and emails (snapshot).",
+    },
+    "telemetry": {
+        "label": "Device telemetry",
+        "description": "Battery, charging, network type, storage and memory status.",
     },
 }
 
