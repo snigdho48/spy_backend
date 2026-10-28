@@ -78,5 +78,6 @@ class TotpVerifyLoginView(APIView):
         payload = TotpService().complete_login(
             pre_auth_token=serializer.validated_data["pre_auth_token"],
             code=serializer.validated_data["code"],
+            request=request,
         )
         return Response(payload)

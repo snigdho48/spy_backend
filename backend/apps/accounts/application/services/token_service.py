@@ -11,6 +11,8 @@ def build_auth_payload(
     *,
     is_new_user: bool | None = None,
     include_auth_methods: bool = True,
+    request=None,
+    device_label: str = "",
 ) -> dict:
     auth_service = AuthenticationService()
     google_service = GoogleAuthService()
@@ -21,6 +23,20 @@ def build_auth_payload(
     if membership:
         refresh["tenant_id"] = str(membership.tenant_id)
         refresh["role"] = membership.role
+
+    if request is not None:
+        from apps.accounts.application.services.session_service import SessionService
+
+        label = device_label
+        if not label and hasattr(request, "data"):
+            label = request.data.get("device_label", "") or ""
+        SessionService().record_login(
+            user=user,
+            refresh=refresh,
+            ip_address=_client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            device_label=label,
+        )
 
     payload: dict = {
         "user": {
@@ -53,3 +69,10 @@ def build_auth_payload(
         payload["is_new_user"] = is_new_user
 
     return payload
+
+
+def _client_ip(request) -> str | None:
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip() or None
+    return request.META.get("REMOTE_ADDR") or None

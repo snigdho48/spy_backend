@@ -35,7 +35,7 @@ class RegisterView(APIView):
         result = RegistrationService().register(**serializer.validated_data)
 
         return Response(
-            build_auth_payload(result.user, is_new_user=True),
+            build_auth_payload(result.user, is_new_user=True, request=request),
             status=status.HTTP_201_CREATED,
         )
 
@@ -50,11 +50,9 @@ class LogoutView(APIView):
     def post(self, request):
         refresh_token = request.data.get("refresh")
         if refresh_token:
-            try:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-            except Exception:
-                pass
+            from apps.accounts.application.services.session_service import SessionService
+
+            SessionService().revoke_by_refresh_token(refresh_token=refresh_token)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -103,7 +101,7 @@ class GoogleLoginView(APIView):
             full_name=data.get("full_name"),
         )
         return Response(
-            build_auth_payload(result.user, is_new_user=result.is_new_user),
+            build_auth_payload(result.user, is_new_user=result.is_new_user, request=request),
             status=status.HTTP_201_CREATED if result.is_new_user else status.HTTP_200_OK,
         )
 

@@ -1,5 +1,10 @@
 from django.urls import path
-from rest_framework_simplejwt.views import TokenRefreshView
+from apps.accounts.presentation.views.session_views import (
+    SessionListView,
+    SessionRevokeOthersView,
+    SessionRevokeView,
+    TrackingTokenRefreshView,
+)
 
 from apps.accounts.presentation.views.totp_views import (
     TotpConfirmView,
@@ -27,7 +32,10 @@ urlpatterns = [
     path("google/", GoogleLoginView.as_view(), name="auth-google"),
     path("link/google/", LinkGoogleView.as_view(), name="auth-link-google"),
     path("link/password/", SetPasswordView.as_view(), name="auth-set-password"),
-    path("token/refresh/", TokenRefreshView.as_view(), name="auth-token-refresh"),
+    path("token/refresh/", TrackingTokenRefreshView.as_view(), name="auth-token-refresh"),
+    path("sessions/", SessionListView.as_view(), name="auth-sessions"),
+    path("sessions/revoke-others/", SessionRevokeOthersView.as_view(), name="auth-sessions-revoke-others"),
+    path("sessions/<uuid:session_id>/", SessionRevokeView.as_view(), name="auth-session-revoke"),
     path("logout/", LogoutView.as_view(), name="auth-logout"),
     path("me/", MeView.as_view(), name="auth-me"),
     path("me/export/", AccountExportView.as_view(), name="auth-me-export"),
