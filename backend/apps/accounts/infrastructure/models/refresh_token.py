@@ -17,6 +17,8 @@ class RefreshTokenRecord(BaseModel):
     replaced_by_jti = models.CharField(max_length=255, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=512, blank=True)
+    device_label = models.CharField(max_length=128, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         db_table = "accounts_refresh_token"

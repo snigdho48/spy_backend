@@ -103,6 +103,26 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             }
 
         data = super().validate(attrs)
+        try:
+            from apps.accounts.application.services.session_service import SessionService
+            from rest_framework_simplejwt.tokens import RefreshToken as RT
+
+            refresh = RT(data["refresh"])
+            request = self.context.get("request")
+            SessionService().record_login(
+                user=self.user,
+                refresh=refresh,
+                ip_address=(
+                    (request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or None)
+                    if request
+                    else None
+                )
+                or (request.META.get("REMOTE_ADDR") if request else None),
+                user_agent=request.META.get("HTTP_USER_AGENT", "") if request else "",
+                device_label=(request.data.get("device_label", "") if request else "") or "",
+            )
+        except Exception:
+            pass
         data["user"] = {
             "id": self.user.id,
             "email": self.user.email,

@@ -167,8 +167,8 @@ class TotpService:
             raise PermissionDeniedError("Invalid pre-auth token")
         return user
 
-    def complete_login(self, *, pre_auth_token: str, code: str) -> dict:
+    def complete_login(self, *, pre_auth_token: str, code: str, request=None) -> dict:
         user = self.user_from_pre_auth(pre_auth_token)
         if not self.verify_code_or_recovery(user, code):
             raise PermissionDeniedError("Invalid authentication code")
-        return build_auth_payload(user)
+        return build_auth_payload(user, request=request)
