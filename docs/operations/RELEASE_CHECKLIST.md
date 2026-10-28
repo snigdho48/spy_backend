@@ -19,7 +19,7 @@ Related: [DEPLOYMENT_PLAN.md](../architecture/DEPLOYMENT_PLAN.md), [SECURITY_MOD
 
 ### Database (MySQL)
 
-- [ ] **TODO(user):** Configure automated MySQL backups (full + restore drill). Compose alone is not a backup plan.
+- [ ] **TODO(user):** Schedule automated MariaDB backups and a restore drill. See [BACKUPS.md](./BACKUPS.md) and `scripts/backup-mariadb.sh` (mysqldump/mariadb-dump cron pattern).
 - [ ] Run migrations on the production DB before traffic:  
   `python manage.py migrate` (from `backend/`, prod settings + credentials).
 - [ ] Confirm migrations through devices `0005_device_photo_url` (and earlier pause / safe zone / keyword) are applied.

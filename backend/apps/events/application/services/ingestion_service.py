@@ -131,6 +131,10 @@ class EventIngestionService:
                     # call.* / sms.* contact metadata. Do not fetch photos (SSRF).
                     payload = apply_contact_redaction(payload)
 
+                from core.crypto.field_encryption import encrypt_payload
+
+                payload = encrypt_payload(payload)
+
                 created_events.append(
                     DeviceEvent(
                         tenant=tenant,
@@ -174,9 +178,14 @@ class EventIngestionService:
                 event.event_type in CONTACT_SNAPSHOT_TYPES
                 or event.event_type.startswith("contact.")
             ):
+                from core.crypto.field_encryption import encrypt_contacts
+
                 contacts = event.payload.get("contacts") or []
                 if not isinstance(contacts, list):
                     contacts = []
+                # Payload may already be field-encrypted; encrypt_contacts is
+                # idempotent for enc:v1: values.
+                contacts = encrypt_contacts(contacts)
                 DeviceContactSnapshot.objects.update_or_create(
                     device=device,
                     defaults={
@@ -216,11 +225,13 @@ class EventIngestionService:
             return
 
         group_name = f"tenant_{tenant.id}_events"
+        from core.crypto.field_encryption import decrypt_payload
+
         batch_payload = [
             {
                 "device_id": str(device.id),
                 "event_type": event.event_type,
-                "payload": event.payload,
+                "payload": decrypt_payload(event.payload or {}),
                 "timestamp": event.event_timestamp.isoformat(),
             }
             for event in events

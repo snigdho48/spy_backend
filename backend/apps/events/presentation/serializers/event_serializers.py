@@ -201,6 +201,13 @@ class DeviceEventSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
+    def to_representation(self, instance):
+        from core.crypto.field_encryption import decrypt_payload
+
+        data = super().to_representation(instance)
+        data["payload"] = decrypt_payload(data.get("payload") or {})
+        return data
+
 
 class DeviceContactSnapshotSerializer(serializers.ModelSerializer):
     class Meta:
@@ -214,6 +221,13 @@ class DeviceContactSnapshotSerializer(serializers.ModelSerializer):
             "updated_at",
             "source_event_id",
         ]
+
+    def to_representation(self, instance):
+        from core.crypto.field_encryption import decrypt_contacts
+
+        data = super().to_representation(instance)
+        data["contacts"] = decrypt_contacts(data.get("contacts") or [])
+        return data
 
 
 class DeviceAppInventorySnapshotSerializer(serializers.ModelSerializer):

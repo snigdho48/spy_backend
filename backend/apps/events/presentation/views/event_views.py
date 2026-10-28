@@ -5,6 +5,7 @@ from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.application.services.auth_service import AuthenticationService
+from apps.devices.application.services.device_access import DeviceAccessService
 from apps.events.application.services.ingestion_service import EventIngestionService
 from apps.events.infrastructure.models.event import DeviceEvent
 from apps.events.infrastructure.models.snapshots import (
@@ -58,10 +59,22 @@ class EventListView(TenantMixin, generics.ListAPIView):
 
     def get_queryset(self):
         tenant = self.get_tenant()
-        qs = DeviceEvent.objects.filter(tenant=tenant).select_related("device")
+        access = DeviceAccessService()
+        allowed_ids = access.accessible_device_ids(
+            user=self.request.user, tenant=tenant
+        )
+        qs = DeviceEvent.objects.filter(
+            tenant=tenant, device_id__in=allowed_ids
+        ).select_related("device")
+
         device_id = self.request.query_params.get("device_id")
         if device_id:
+            # Explicit check so unauthorized members get 403, not an empty list.
+            access.get_accessible_device(
+                user=self.request.user, tenant=tenant, device_id=device_id
+            )
             qs = qs.filter(device_id=device_id)
+
         event_type = self.request.query_params.get("event_type")
         if event_type:
             qs = qs.filter(event_type=event_type)
@@ -72,7 +85,7 @@ class EventListView(TenantMixin, generics.ListAPIView):
 
 
 class ContactSnapshotLatestView(TenantMixin, APIView):
-    """Latest address-book snapshot for a device in the monitor's tenant."""
+    """Latest address-book snapshot for a device the caller may access."""
 
     permission_classes = [IsAuthenticated]
 
@@ -81,6 +94,9 @@ class ContactSnapshotLatestView(TenantMixin, APIView):
         device_id = request.query_params.get("device_id")
         if not device_id:
             raise ValidationError("device_id is required")
+        DeviceAccessService().get_accessible_device(
+            user=request.user, tenant=tenant, device_id=device_id
+        )
         snap = (
             DeviceContactSnapshot.objects.filter(tenant=tenant, device_id=device_id)
             .select_related("device")
@@ -92,7 +108,7 @@ class ContactSnapshotLatestView(TenantMixin, APIView):
 
 
 class AppInventorySnapshotLatestView(TenantMixin, APIView):
-    """Latest installed-app inventory for a device in the monitor's tenant."""
+    """Latest installed-app inventory for a device the caller may access."""
 
     permission_classes = [IsAuthenticated]
 
@@ -101,6 +117,9 @@ class AppInventorySnapshotLatestView(TenantMixin, APIView):
         device_id = request.query_params.get("device_id")
         if not device_id:
             raise ValidationError("device_id is required")
+        DeviceAccessService().get_accessible_device(
+            user=request.user, tenant=tenant, device_id=device_id
+        )
         snap = (
             DeviceAppInventorySnapshot.objects.filter(
                 tenant=tenant, device_id=device_id

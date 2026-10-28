@@ -1,5 +1,4 @@
 import json
-import uuid
 from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
@@ -9,7 +8,6 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
-from apps.devices.infrastructure.models.device import Device
 
 User = get_user_model()
 
@@ -39,6 +37,9 @@ class EventStreamConsumer(AsyncWebsocketConsumer):
             return
 
         self.tenant_id = tenant_id
+        # Default filter: only devices this user may access (BOLA).
+        allowed = await self._filter_tenant_device_ids([])
+        self.device_filter = set(allowed)
         group = f"tenant_{tenant_id}_events"
         await self.channel_layer.group_add(group, self.channel_name)
         self.groups.append(group)
@@ -64,10 +65,13 @@ class EventStreamConsumer(AsyncWebsocketConsumer):
                 requested = []
 
             if not requested:
-                # Empty subscribe = all devices in the tenant (backward compatible).
-                self.device_filter = None
+                # Empty subscribe = all devices the user is authorized to access.
+                allowed = await self._filter_tenant_device_ids([])
+                self.device_filter = set(allowed)
                 await self.send(
-                    text_data=json.dumps({"type": "subscribed", "device_ids": []})
+                    text_data=json.dumps(
+                        {"type": "subscribed", "device_ids": allowed}
+                    )
                 )
                 return
 
@@ -132,27 +136,23 @@ class EventStreamConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _filter_tenant_device_ids(self, requested: list) -> list[str]:
-        """Return requested ids (as lowercase strings) that belong to this tenant."""
-        parsed: list[uuid.UUID] = []
-        for value in requested:
-            try:
-                parsed.append(uuid.UUID(str(value)))
-            except (ValueError, AttributeError):
-                continue
-        if not parsed:
+        """Return requested ids the authenticated user may access in this tenant."""
+        from apps.devices.application.services.device_access import DeviceAccessService
+        from apps.tenants.infrastructure.models.tenant import Tenant
+
+        tenant = Tenant.objects.filter(pk=self.tenant_id).first()
+        if not tenant or not getattr(self, "user", None):
             return []
-        found = {
-            str(pk)
-            for pk in Device.objects.filter(
-                tenant_id=self.tenant_id, pk__in=parsed
-            ).values_list("pk", flat=True)
-        }
-        out: list[str] = []
-        for u in parsed:
-            s = str(u)
-            if s in found and s not in out:
-                out.append(s)
-        return out
+        if not requested:
+            return [
+                str(pk).lower()
+                for pk in DeviceAccessService().accessible_device_ids(
+                    user=self.user, tenant=tenant
+                )
+            ]
+        return DeviceAccessService().filter_requested_device_ids(
+            user=self.user, tenant=tenant, requested=requested
+        )
 
     @database_sync_to_async
     def _get_tenant_id(self, user) -> str | None:

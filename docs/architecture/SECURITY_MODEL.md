@@ -16,7 +16,7 @@
 | Pairing token + code | ✅ | Time-limited pairing (`expires_at`), QR `spylove://pair?code=&token=` |
 | Monitor-chosen consent scopes | ✅ | `granted_by = device.owner`; revoke via `DELETE /devices/{id}/consent/` or disconnect |
 | Audit log | 🟡 | `AuditLog` rows written for pairing/consent actions; readable via `GET /api/v1/audit/` by **owner/admin/monitor** (viewer gets 403); not enforced immutable |
-| Tenant isolation | 🟡 | Monitor-side queries filter by the user's tenant membership |
+| Tenant isolation | ✅ | Tenant filter + per-device authorization (owner or OWNER/ADMIN/MONITOR role); VIEWER cannot read others' device data |
 | DRF throttling | ✅ | anon 20/min, user 100/min, auth 10/min, events 1000/min |
 | Host / CORS allow-lists | ✅ | `ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS` are env-driven CSV (`base.py`); allow-all CORS only in `settings/dev.py` |
 | WebSocket auth + filtering | 🟡 | `Authorization: Bearer` preferred, `?token=` fallback (mobile limitation); expired/invalid tokens closed with 4001; `subscribe` filters delivery to the user's tenant devices. Query tokens can still leak into logs |
@@ -25,11 +25,11 @@
 | Plan change without payment | 📋 | Owner/admin only; no billing/payment verification yet (TODO in `SubscribeView`) |
 | RBAC permission matrix | 🟡 | Enforced for plan changes (`POST /subscription/subscribe/`: owner/admin) and audit log (owner/admin/monitor), plus device manage roles; the rest of the matrix below is not enforced end-to-end |
 | RS256 JWT / key rotation | 📋 | |
-| Field-level PII encryption | 📋 | |
-| GDPR export / erasure endpoints | 📋 | `/users/me/export/` and `DELETE /users/me/` do not exist |
+| Field-level PII encryption | 🟡 | Fernet for message bodies / phone fields on new writes; plaintext legacy rows readable; key via `FIELD_ENCRYPTION_KEY` |
+| GDPR export / erasure endpoints | ✅ | `GET /api/v1/auth/me/export/`, `DELETE /api/v1/auth/me/delete/`; retention purge via Celery + `purge_expired_events` |
 | mTLS / device certificates | 📋 | |
 | Nginx `limit_req`, secure headers, WAF | 📋 | Deployment-level; verify `infra/nginx/nginx.conf` before relying on it |
-| Dependabot / pip-audit in CI | 📋 | No CI pipeline in repo |
+| Dependabot / pip-audit in CI | 🟡 | GitHub Actions runs ruff + makemigrations --check + pytest; Dependabot/pip-audit still open |
 
 ## Authentication Flow (Implemented)
 

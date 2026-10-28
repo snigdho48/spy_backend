@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.application.services.auth_service import AuthenticationService
+from apps.devices.application.services.device_access import DeviceAccessService
 from apps.devices.application.services.pairing_service import (
     DeviceManagementService,
     DevicePairingService,
@@ -39,7 +40,8 @@ class DeviceListView(TenantMixin, generics.ListAPIView):
     def get_queryset(self):
         tenant = self.get_tenant()
         return (
-            Device.objects.filter(tenant=tenant)
+            DeviceAccessService()
+            .accessible_devices_qs(user=self.request.user, tenant=tenant)
             .select_related("owner")
             .order_by("-created_at")
         )
@@ -137,13 +139,9 @@ class OwnedDeviceResumeView(APIView):
 class DeviceDetailView(TenantMixin, APIView):
     def get(self, request, device_id):
         tenant = self.get_tenant()
-        device = (
-            Device.objects.filter(tenant=tenant, pk=device_id)
-            .select_related("owner")
-            .first()
+        device = DeviceAccessService().get_accessible_device(
+            user=request.user, tenant=tenant, device_id=device_id
         )
-        if not device:
-            raise EntityNotFoundError("Device not found")
         return Response(DeviceDetailSerializer(device).data)
 
     def patch(self, request, device_id):

@@ -2,6 +2,8 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.accounts.presentation.views.auth_views import (
+    AccountDeleteView,
+    AccountExportView,
     GoogleLoginView,
     LinkGoogleView,
     LoginView,
@@ -20,4 +22,6 @@ urlpatterns = [
     path("token/refresh/", TokenRefreshView.as_view(), name="auth-token-refresh"),
     path("logout/", LogoutView.as_view(), name="auth-logout"),
     path("me/", MeView.as_view(), name="auth-me"),
+    path("me/export/", AccountExportView.as_view(), name="auth-me-export"),
+    path("me/delete/", AccountDeleteView.as_view(), name="auth-me-delete"),
 ]
