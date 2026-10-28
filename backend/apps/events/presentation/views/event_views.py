@@ -329,3 +329,51 @@ class DeviceExportView(TenantMixin, APIView):
             response["Content-Disposition"] = f'attachment; filename="{filename}"'
             return response
         raise ValidationError("export_format must be csv or pdf")
+
+
+class ActivityFeedView(TenantMixin, APIView):
+    """Merged, reverse-chronological activity feed for a single device.
+
+    Query params:
+      device_id (required),
+      from, to (ISO-8601) — optional window,
+      types=location,app_inventory,notifications,app_usage,telemetry,contacts,
+            calls,sms,messages,alerts (default: all),
+      cursor (opaque, from a previous page's `next`),
+      limit (1-100, default 50).
+
+    Authorization matches the other device feeds via DeviceAccessService:
+    owner or OWNER/ADMIN/MONITOR workspace member. VIEWER-only membership is
+    rejected with 403 (consent scopes are enforced at ingestion time).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.events.application.services.activity_service import (
+            ActivityFeedService,
+        )
+
+        tenant = self.get_tenant()
+        device_id = request.query_params.get("device_id")
+        if not device_id:
+            raise ValidationError("device_id is required")
+        device = DeviceAccessService().get_accessible_device(
+            user=request.user, tenant=tenant, device_id=device_id
+        )
+        svc = ActivityFeedService()
+        categories = svc.parse_categories(request.query_params.get("types"))
+        start, end = svc.parse_range(
+            request.query_params.get("from"), request.query_params.get("to")
+        )
+        offset = svc.decode_cursor(request.query_params.get("cursor"))
+        limit = svc.parse_limit(request.query_params.get("limit"))
+        page = svc.build_page(
+            device=device,
+            categories=categories,
+            start=start,
+            end=end,
+            offset=offset,
+            limit=limit,
+        )
+        return Response(page)
