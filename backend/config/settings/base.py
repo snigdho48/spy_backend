@@ -373,3 +373,6 @@ FCM_CREDENTIALS_PATH = os.environ.get("FCM_CREDENTIALS_PATH", "").strip()
 
 # Low-battery alert threshold (percent). Fires when battery_pct <= this AND not charging.
 LOW_BATTERY_THRESHOLD_PCT = int(os.environ.get("LOW_BATTERY_THRESHOLD_PCT", "15"))
+
+# Public app origin used to build shareable invite links (no trailing slash).
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
