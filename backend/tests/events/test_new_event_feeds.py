@@ -13,6 +13,7 @@ from apps.events.infrastructure.models.snapshots import (
 )
 from apps.events.models import DeviceAppInventorySnapshot as ReExportApp
 from apps.events.models import DeviceContactSnapshot as ReExportContact
+from core.crypto.field_encryption import decrypt_contacts, decrypt_payload
 
 
 @pytest.fixture
@@ -131,7 +132,8 @@ class TestContactSnapshotFeed:
         assert row.payload["count"] == 2
         assert row.payload["contacts"][0]["name"] == "Dad"
         assert "photo_base64" not in row.payload["contacts"][0]
-        assert row.payload["contacts"][1]["phones"] == ["+15559876"]
+        assert decrypt_contacts(row.payload["contacts"])[1]["phones"] == ["+15559876"]
+        assert row.payload["contacts"][1]["phones"][0].startswith("enc:v1:")
 
         snap = DeviceContactSnapshot.objects.get(device_id=device_id)
         assert snap.contact_count == 2
@@ -346,12 +348,13 @@ class TestRichChatAndNotifications:
         received = DeviceEvent.objects.get(idempotency_key="msg-recv-1")
         assert received.payload["app"] == "com.whatsapp"
         assert received.payload["direction"] == "incoming"
-        assert received.payload["body"] == "On my way"
+        assert received.payload["body"].startswith("enc:v1:")
+        assert decrypt_payload(received.payload)["body"] == "On my way"
 
         sent = DeviceEvent.objects.get(idempotency_key="msg-sent-1")
         assert sent.payload["thread_id"] == "ig-1"
         assert sent.payload["contact_name"] == "Sam"
-        assert sent.payload["body"] == "ok"
+        assert decrypt_payload(sent.payload)["body"] == "ok"
 
         _auth(api_client, monitor["tokens"])
         listed = api_client.get(

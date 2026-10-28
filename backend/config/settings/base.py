@@ -179,6 +179,21 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 300
 
+# Periodic retention purge (requires a celery beat process, or run the
+# `purge_expired_events` management command via cron — preferred on lean hosts).
+CELERY_BEAT_SCHEDULE = {
+    "purge-expired-events-hourly": {
+        "task": "events.purge_expired_events",
+        "schedule": 3600.0,
+        "kwargs": {"chunk_size": 500},
+    },
+}
+
+# Fernet key (url-safe base64, 32 bytes) for application-level field encryption.
+# Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Empty = encryption disabled (dev only). Production fails closed — see prod.py.
+FIELD_ENCRYPTION_KEY = os.environ.get("FIELD_ENCRYPTION_KEY", "").strip()
+
 # Channels
 CHANNEL_LAYERS = {
     "default": {
@@ -308,6 +323,11 @@ GOOGLE_CLIENT_IDS = [
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "sensitive_data": {
+            "()": "core.logging_filters.SensitiveDataFilter",
+        },
+    },
     "formatters": {
         "json": {
             "format": '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","message":"%(message)s"}',
@@ -321,6 +341,7 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
+            "filters": ["sensitive_data"],
         },
     },
     "root": {
@@ -329,6 +350,7 @@ LOGGING = {
     },
     "loggers": {
         "django": {"level": "INFO"},
-        "apps": {"level": "DEBUG"},
+        # Default INFO; DEBUG only when DJANGO_LOG_LEVEL=DEBUG (never in prod).
+        "apps": {"level": os.environ.get("DJANGO_LOG_LEVEL", "INFO").upper()},
     },
 }

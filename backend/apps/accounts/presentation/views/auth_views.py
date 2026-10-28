@@ -131,3 +131,31 @@ class SetPasswordView(APIView):
             password=serializer.validated_data["password"],
         )
         return Response({"auth_methods": GoogleAuthService().get_auth_methods(request.user)})
+
+
+
+class AccountDeleteView(APIView):
+    """GDPR right-to-erasure: permanently delete the authenticated account."""
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        from apps.accounts.application.services.gdpr_service import GdprService
+
+        result = GdprService().delete_account(request.user)
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class AccountExportView(APIView):
+    """GDPR right-to-access / portability: stream owned devices + events as JSON."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.http import StreamingHttpResponse
+        from apps.accounts.application.services.gdpr_service import GdprService
+
+        chunks = GdprService().iter_export_chunks(request.user)
+        response = StreamingHttpResponse(chunks, content_type="application/json")
+        response["Content-Disposition"] = 'attachment; filename="my-data-export.json"'
+        return response

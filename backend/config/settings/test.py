@@ -34,3 +34,7 @@ REST_FRAMEWORK = {
         "events": "10000/minute",
     },
 }
+
+
+# Deterministic Fernet key for tests (not a secret).
+FIELD_ENCRYPTION_KEY = "tVb6TUsed8YNK659GzTjUxPKJXsQUqAFjlfdhsR2QII="

@@ -35,3 +35,17 @@ if SENTRY_DSN:
         traces_sample_rate=0.1,
         send_default_pii=False,
     )
+
+
+# Fail closed: sensitive payload fields must be encryptable in production.
+from django.core.exceptions import ImproperlyConfigured  # noqa: E402
+
+if not FIELD_ENCRYPTION_KEY:  # noqa: F405
+    raise ImproperlyConfigured(
+        "FIELD_ENCRYPTION_KEY must be set in production "
+        "(Fernet key; generate with cryptography.fernet.Fernet.generate_key())."
+    )
+
+# Never leave apps loggers at DEBUG in production.
+LOGGING["loggers"]["apps"]["level"] = "INFO"  # noqa: F405
+LOGGING["root"]["level"] = "INFO"  # noqa: F405
