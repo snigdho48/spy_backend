@@ -21,12 +21,38 @@ from apps.events.domain.event_types import (
 from apps.events.infrastructure.models.event import DeviceEvent
 from apps.events.infrastructure.models.snapshots import (
     DeviceAppInventorySnapshot,
+    DeviceAppUsageSnapshot,
     DeviceContactSnapshot,
+    DeviceTelemetrySnapshot,
 )
 from apps.tenants.infrastructure.models.tenant import Tenant
 from core.domain.exceptions import ConflictError, EntityNotFoundError, ValidationError
 
 _LOCATIONISH_PREFIXES = ("location.", "geofence.")
+
+
+def _as_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_bool(value):
+    if value is None:
+        return None
+    return bool(value)
+
+
+def _as_dt(value):
+    if not value:
+        return None
+    if isinstance(value, str):
+        try:
+            return timezone.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return value
 
 
 class EventIngestionService:
@@ -212,6 +238,42 @@ class EventIngestionService:
                         "include_system": bool(
                             event.payload.get("include_system", True)
                         ),
+                        "source_event_id": event.pk,
+                        "captured_at": event.event_timestamp,
+                    },
+                )
+            elif event.event_type == "app_usage.snapshot" or event.event_type.startswith(
+                "app_usage."
+            ):
+                usage_apps = event.payload.get("apps") or []
+                if not isinstance(usage_apps, list):
+                    usage_apps = []
+                DeviceAppUsageSnapshot.objects.update_or_create(
+                    device=device,
+                    defaults={
+                        "tenant": tenant,
+                        "apps": usage_apps,
+                        "app_count": len(usage_apps),
+                        "period_start": _as_dt(event.payload.get("period_start")),
+                        "period_end": _as_dt(event.payload.get("period_end")),
+                        "source_event_id": event.pk,
+                        "captured_at": event.event_timestamp,
+                    },
+                )
+            elif event.event_type == "device.telemetry":
+                payload = event.payload or {}
+                DeviceTelemetrySnapshot.objects.update_or_create(
+                    device=device,
+                    defaults={
+                        "tenant": tenant,
+                        "battery_pct": _as_int(payload.get("battery_pct")),
+                        "charging": _as_bool(payload.get("charging")),
+                        "network_type": str(payload.get("network_type") or "")[:32],
+                        "storage_free": _as_int(payload.get("storage_free")),
+                        "storage_total": _as_int(payload.get("storage_total")),
+                        "ram_free": _as_int(payload.get("ram_free")),
+                        "ram_total": _as_int(payload.get("ram_total")),
+                        "metrics": payload if isinstance(payload, dict) else {},
                         "source_event_id": event.pk,
                         "captured_at": event.event_timestamp,
                     },

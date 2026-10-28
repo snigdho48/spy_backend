@@ -289,6 +289,7 @@ class ConsentService:
             "message": "messaging",
             "sim": "sim",
             "contact": "contacts",
+            "device": "telemetry",
         }
         prefix = event_type.split(".")[0]
         required_scope = scope_map.get(prefix)

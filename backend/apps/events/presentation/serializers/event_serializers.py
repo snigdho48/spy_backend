@@ -243,3 +243,49 @@ class DeviceAppInventorySnapshotSerializer(serializers.ModelSerializer):
             "updated_at",
             "source_event_id",
         ]
+
+
+class DeviceAppUsageSnapshotSerializer(serializers.ModelSerializer):
+    device_id = serializers.UUIDField(source="device.id", read_only=True)
+
+    class Meta:
+        from apps.events.infrastructure.models.snapshots import (
+            DeviceAppUsageSnapshot,
+        )
+
+        model = DeviceAppUsageSnapshot
+        fields = [
+            "device_id",
+            "apps",
+            "app_count",
+            "period_start",
+            "period_end",
+            "captured_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class DeviceTelemetrySnapshotSerializer(serializers.ModelSerializer):
+    device_id = serializers.UUIDField(source="device.id", read_only=True)
+
+    class Meta:
+        from apps.events.infrastructure.models.snapshots import (
+            DeviceTelemetrySnapshot,
+        )
+
+        model = DeviceTelemetrySnapshot
+        fields = [
+            "device_id",
+            "battery_pct",
+            "charging",
+            "network_type",
+            "storage_free",
+            "storage_total",
+            "ram_free",
+            "ram_total",
+            "metrics",
+            "captured_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
