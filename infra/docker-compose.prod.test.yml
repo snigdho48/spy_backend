@@ -9,7 +9,9 @@ services:
   mariadb:
     container_name: spy-test-mariadb
     mem_limit: 280m
-    memswap_limit: 280m
+    # Allow swap so a memory spike during init (build + live stack running)
+    # cannot starve the throwaway DB's health check on the 3GB box.
+    memswap_limit: 800m
     cpus: "0.50"
     shm_size: 64mb
     command:
@@ -21,6 +23,12 @@ services:
       - --performance-schema=OFF
       - --skip-name-resolve
       - --disable-log-bin
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
 
   redis:
     container_name: spy-test-redis
@@ -40,7 +48,7 @@ services:
   api:
     container_name: spy-test-api
     mem_limit: 320m
-    memswap_limit: 320m
+    memswap_limit: 640m
 
   celery:
     container_name: spy-test-celery
