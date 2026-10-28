@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.devices",
     "apps.events",
+    "apps.alerts",
     "apps.audit",
 ]
 
@@ -280,6 +281,7 @@ VALID_CONSENT_SCOPES = frozenset({
     "screen",
     "contacts",
     "telemetry",
+    "sos",
 })
 
 # Human-facing catalog for the consent scopes above: a clear label and
@@ -311,6 +313,10 @@ CONSENT_SCOPE_CATALOG = {
     "telemetry": {
         "label": "Device telemetry",
         "description": "Battery, charging, network type, storage and memory status.",
+    },
+    "sos": {
+        "label": "SOS / panic",
+        "description": "Allow this device to emit high-priority SOS / panic alerts.",
     },
 }
 
@@ -359,3 +365,11 @@ LOGGING = {
         "apps": {"level": os.environ.get("DJANGO_LOG_LEVEL", "INFO").upper()},
     },
 }
+
+
+# Firebase Cloud Messaging (HTTP v1). Path to a Google service-account JSON.
+# When unset / missing the FCM client is a no-op (safe for local & tests).
+FCM_CREDENTIALS_PATH = os.environ.get("FCM_CREDENTIALS_PATH", "").strip()
+
+# Low-battery alert threshold (percent). Fires when battery_pct <= this AND not charging.
+LOW_BATTERY_THRESHOLD_PCT = int(os.environ.get("LOW_BATTERY_THRESHOLD_PCT", "15"))

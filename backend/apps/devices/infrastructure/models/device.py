@@ -130,6 +130,7 @@ class SafeZone(TenantScopedModel):
     lat = models.FloatField()
     lng = models.FloatField()
     radius_m = models.PositiveIntegerField(default=100)
+    enabled = models.BooleanField(default=True, db_index=True)
     created_by = models.ForeignKey(
         "accounts.User",
         on_delete=models.CASCADE,
@@ -161,6 +162,42 @@ class SafeZone(TenantScopedModel):
     @property
     def display_label(self) -> str:
         return f"Safe Zone: {self.name}"
+
+
+class GeofenceState(TenantScopedModel):
+    """Last-known inside/outside state for a (device, safe_zone) pair.
+
+    Used to debounce geofence enter/exit alerts so GPS jitter does not spam.
+    """
+
+    device = models.ForeignKey(
+        Device,
+        on_delete=models.CASCADE,
+        related_name="geofence_states",
+    )
+    safe_zone = models.ForeignKey(
+        SafeZone,
+        on_delete=models.CASCADE,
+        related_name="geofence_states",
+    )
+    is_inside = models.BooleanField(default=False)
+    last_evaluated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "devices_geofence_state"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device", "safe_zone"],
+                name="unique_device_safe_zone_state",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["device", "is_inside"]),
+        ]
+
+    def __str__(self) -> str:
+        side = "inside" if self.is_inside else "outside"
+        return f"{self.device_id} {side} {self.safe_zone_id}"
 
 
 class DevicePairing(TenantScopedModel):

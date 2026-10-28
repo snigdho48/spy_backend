@@ -2,6 +2,7 @@ from apps.devices.infrastructure.models.device import (
     ConsentRecord,
     Device,
     DevicePairing,
+    GeofenceState,
     SafeZone,
     SharingPause,
     WatchlistKeyword,
@@ -16,6 +17,7 @@ __all__ = [
     "ConsentRecord",
     "SharingPause",
     "SafeZone",
+    "GeofenceState",
     "WatchlistKeyword",
     "ScreenShareSession",
 ]

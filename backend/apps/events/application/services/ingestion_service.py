@@ -183,6 +183,9 @@ class EventIngestionService:
                 device.save(update_fields=["last_seen_at", "updated_at"])
                 self._upsert_snapshots(tenant, device, created_events)
 
+            # Alert hooks + push enqueue run after commit so Celery never races.
+            self._run_alert_hooks(device, created_events)
+
             events_snapshot = list(created_events)
             threading.Thread(
                 target=self._broadcast_events,
@@ -278,6 +281,99 @@ class EventIngestionService:
                         "captured_at": event.event_timestamp,
                     },
                 )
+
+
+    def _run_alert_hooks(self, device: Device, events: list[DeviceEvent]) -> None:
+        """Generate alerts from newly ingested events. Failures must not roll back ingest."""
+        try:
+            from apps.alerts.application.services.alert_service import AlertService
+            from apps.devices.application.services.geofence_service import GeofenceService
+            from django.conf import settings as dj_settings
+
+            alerts = AlertService()
+            geo = GeofenceService()
+            for event in events:
+                et = event.event_type
+                payload = event.payload or {}
+                if et.startswith("location."):
+                    lat = payload.get("lat", payload.get("latitude"))
+                    lng = payload.get("lng", payload.get("longitude"))
+                    try:
+                        lat_f = float(lat)
+                        lng_f = float(lng)
+                    except (TypeError, ValueError):
+                        continue
+                    for change in geo.evaluate_location(
+                        device=device, lat=lat_f, lng=lng_f, at=event.event_timestamp
+                    ):
+                        alerts.on_geofence_transition(
+                            device=device,
+                            zone=change["zone"],
+                            transition=change["transition"],
+                            distance_m=change["distance_m"],
+                        )
+                elif et == "app_inventory.snapshot" or et.startswith("app_inventory."):
+                    self._diff_app_inventory(device, event, payload, alerts)
+                elif et == "sim.changed":
+                    alerts.on_sim_changed(device=device, payload=payload)
+                elif et == "device.telemetry":
+                    try:
+                        pct = int(payload.get("battery_pct"))
+                    except (TypeError, ValueError):
+                        continue
+                    charging = bool(payload.get("charging"))
+                    threshold = int(
+                        getattr(dj_settings, "LOW_BATTERY_THRESHOLD_PCT", 15)
+                    )
+                    if pct <= threshold and not charging:
+                        alerts.on_low_battery(
+                            device=device, battery_pct=pct, charging=charging
+                        )
+                elif et == "sos.triggered":
+                    alerts.on_sos(device=device, payload=payload)
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "Alert hooks failed for device %s", device.id
+            )
+
+    def _diff_app_inventory(self, device, current_event, payload, alerts) -> None:
+        """Emit app_installed alerts for packages not in the previous snapshot."""
+        new_apps = payload.get("apps") or []
+        if not isinstance(new_apps, list):
+            return
+        new_pkgs = {
+            str(a.get("package") or "").strip()
+            for a in new_apps
+            if isinstance(a, dict) and a.get("package")
+        }
+        prev_event = (
+            DeviceEvent.objects.filter(
+                device=device, event_type="app_inventory.snapshot"
+            )
+            .exclude(pk=current_event.pk)
+            .order_by("-event_timestamp")
+            .first()
+        )
+        if prev_event is None:
+            return
+        old_apps = (prev_event.payload or {}).get("apps") or []
+        old_pkgs = {
+            str(a.get("package") or "").strip()
+            for a in old_apps
+            if isinstance(a, dict) and a.get("package")
+        }
+        added = new_pkgs - old_pkgs
+        name_by_pkg = {
+            str(a.get("package")): a.get("app_name") or a.get("name") or ""
+            for a in new_apps
+            if isinstance(a, dict) and a.get("package")
+        }
+        for pkg in sorted(added):
+            alerts.on_app_installed(
+                device=device, package=pkg, app_name=name_by_pkg.get(pkg, "")
+            )
 
     def _broadcast_events(
         self, tenant: Tenant, device: Device, events: list[DeviceEvent]
