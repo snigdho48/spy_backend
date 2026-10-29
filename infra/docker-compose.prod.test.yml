@@ -12,13 +12,15 @@ services:
     # Allow swap so a memory spike during init (build + live stack running)
     # cannot starve the throwaway DB's health check on the 3GB box.
     memswap_limit: 800m
-    cpus: "0.50"
+    cpus: "1.00"
     shm_size: 64mb
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --innodb-buffer-pool-size=64M
       - --innodb-buffer-pool-instances=1
+      - --innodb-flush-log-at-trx-commit=2
+      - --innodb-flush-method=O_DIRECT
       - --max-connections=20
       - --performance-schema=OFF
       - --skip-name-resolve
@@ -26,9 +28,9 @@ services:
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 30
-      start_period: 120s
+      start_period: 300s
 
   redis:
     container_name: spy-test-redis
