@@ -25,10 +25,10 @@ services:
       - --disable-log-bin
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 60s
-      timeout: 10s
-      retries: 5
-      start_period: 180s
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
 
   redis:
     container_name: spy-test-redis
