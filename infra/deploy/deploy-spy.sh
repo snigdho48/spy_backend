@@ -23,7 +23,7 @@ TEST_UP=0
 
 usage() {
   cat <<EOF
-Usage: deploy-spy.sh [--update | --rollback]
+Usage: deploy-spy.sh [--update | --rollback | --apply-live-config]
 
   (default)    First install or idempotent deploy. Creates $ENV_FILE
                when it is missing, builds spy-api, health-checks a
@@ -31,6 +31,11 @@ Usage: deploy-spy.sh [--update | --rollback]
   --update     Same swap path, but refuses to invent secrets. For the watcher.
   --rollback   Retag spy-api:previous as spy-api:latest, restore the compose
                and nginx files from the saved commit, and health-check again.
+  --apply-live-config
+               Pull the repo, then "compose up -d --no-build" on the live spy
+               project only, so Docker recreates just the containers whose
+               config changed (e.g. healthcheck intervals). No image build,
+               no spy-test stack, no --force-recreate.
 
 The script exits 76 if $TUNNEL_CONTAINER is missing or stopped. It will not
 start the tunnel. Cloudflare hostnames are dashboard-managed:
@@ -375,6 +380,51 @@ assert_test_nginx_isolated() {
   fi
 }
 
+dump_test_stack_diagnostics() {
+  # Runs on any test-stack failure, before teardown, so the evidence lands in
+  # the deploy log. Never fatal.
+  echo "===== spy-test failure diagnostics ($(date -Is)) =====" >&2
+  echo "----- docker ps -a (project spy-test) -----" >&2
+  run_docker ps -a --filter "label=com.docker.compose.project=spy-test" \
+    --format 'table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}' >&2 || true
+  local ids id name
+  ids="$(run_docker ps -aq --filter "label=com.docker.compose.project=spy-test" \
+    --filter "label=com.docker.compose.service=mariadb" 2>/dev/null || true)"
+  if [[ -z "$ids" ]] && run_docker inspect spy-test-mariadb >/dev/null 2>&1; then
+    ids="spy-test-mariadb"
+  fi
+  if [[ -z "$ids" ]]; then
+    echo "No spy-test mariadb container found." >&2
+  fi
+  for id in $ids; do
+    name="$(run_docker inspect -f '{{.Name}}' "$id" 2>/dev/null || echo "$id")"
+    echo "----- health ${name} -----" >&2
+    run_docker inspect --format '{{json .State.Health}}' "$id" >&2 || true
+    echo "----- state ${name} -----" >&2
+    run_docker inspect --format 'Status={{.State.Status}} ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Restarts={{.RestartCount}} Started={{.State.StartedAt}}' "$id" >&2 || true
+    echo "----- logs ${name} (last 100) -----" >&2
+    run_docker logs --tail 100 --timestamps "$id" >&2 || true
+  done
+  echo "===== end spy-test diagnostics =====" >&2
+}
+
+apply_live_config() {
+  # Recreate only live containers whose compose config changed (e.g. healthcheck
+  # intervals). No build, no test stack, no --force-recreate, no dockerd restart.
+  echo "Applying live compose config to project spy (no build, no test stack)."
+  if ! run_docker image inspect spy-api:latest >/dev/null 2>&1; then
+    echo "ERROR: spy-api:latest is missing; run a normal deploy instead." >&2
+    return 1
+  fi
+  compose_project spy latest up -d --no-build --remove-orphans || return 1
+  if ! wait_for_stack spy-nginx spy-celery; then
+    dump_container_logs spy-nginx spy-api spy-celery spy-mariadb spy-redis
+    return 1
+  fi
+  write_deployed_sha
+  echo "Live config applied and spy-nginx is healthy."
+}
+
 cleanup_test_stack() {
   if [[ "$TEST_UP" != "1" ]]; then
     return 0
@@ -391,12 +441,16 @@ run_test_stack() {
   TEST_UP=1
   echo "Starting throwaway spy-test stack (live spy project is left running)."
   if ! compose_project spy-test candidate up -d --no-build --force-recreate --remove-orphans; then
+    # "dependency failed to start: ... unhealthy" is raised here by compose
+    # (api depends_on mariadb: service_healthy), not by wait_for_stack.
+    dump_test_stack_diagnostics
     return 1
   fi
   if ! assert_test_nginx_isolated; then
     return 1
   fi
   if ! wait_for_stack spy-test-nginx; then
+    dump_test_stack_diagnostics
     dump_container_logs spy-test-nginx spy-test-api spy-test-mariadb spy-test-redis
     return 1
   fi
@@ -518,6 +572,7 @@ parse_args() {
     case "$1" in
       --update) MODE="update" ;;
       --rollback) MODE="rollback" ;;
+      --apply-live-config) MODE="apply-live-config" ;;
       -h|--help)
         usage
         exit 0
@@ -561,6 +616,11 @@ main() {
   acquire_lock
   ensure_env
   trap cleanup_test_stack EXIT
+  if [[ "$MODE" == "apply-live-config" ]]; then
+    apply_live_config
+    assert_portfolio_unchanged
+    exit 0
+  fi
   if [[ "$MODE" == "rollback" ]]; then
     rollback_live
     assert_portfolio_unchanged
