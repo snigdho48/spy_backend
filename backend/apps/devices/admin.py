@@ -161,11 +161,12 @@ class ScreenShareSessionAdmin(admin.ModelAdmin):
         "requested_by",
         "tenant",
         "status",
+        "control_status",
         "requested_at",
         "started_at",
         "ended_at",
     )
-    list_filter = ("status", "tenant")
+    list_filter = ("status", "control_status", "tenant")
     search_fields = (
         "device__name",
         "requested_by__email",

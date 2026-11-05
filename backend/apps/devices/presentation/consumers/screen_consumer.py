@@ -19,6 +19,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
 ALLOWED_FRAME_TYPES = {"screen.frame", "screen.signal"}
+CONTROL_TYPE = "screen.control"
 
 # Pragmatic publisher-side throttle: drop frames above this rate. Defence in
 # depth only — the native capture layer should already cap fps.
@@ -26,6 +27,8 @@ MAX_FRAMES_PER_SECOND = 10
 # Reject oversized frame payloads (base64 JPEG). ~700 KB keeps a few-fps
 # downscaled stream comfortable while blocking abuse.
 MAX_FRAME_BYTES = 700_000
+MAX_CONTROL_PER_SECOND = 20
+MAX_CONTROL_BYTES = 4096
 
 
 class ScreenShareConsumer(AsyncWebsocketConsumer):
@@ -35,6 +38,8 @@ class ScreenShareConsumer(AsyncWebsocketConsumer):
         self.is_publisher = False
         self._window_start = 0.0
         self._frames_in_window = 0
+        self._control_window_start = 0.0
+        self._controls_in_window = 0
 
         token = self._extract_token()
         if not token:
@@ -66,10 +71,7 @@ class ScreenShareConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.group, self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
-        # Only the monitored device may publish; viewers are receive-only.
-        if not self.is_publisher or not text_data:
-            return
-        if len(text_data) > MAX_FRAME_BYTES:
+        if not text_data:
             return
         try:
             data = json.loads(text_data)
@@ -78,7 +80,17 @@ class ScreenShareConsumer(AsyncWebsocketConsumer):
         if not isinstance(data, dict):
             return
         msg_type = data.get("type")
+
+        if msg_type == CONTROL_TYPE:
+            await self._receive_control(text_data, data)
+            return
+
+        # Only the monitored device may publish frames / signals.
+        if not self.is_publisher:
+            return
         if msg_type not in ALLOWED_FRAME_TYPES:
+            return
+        if len(text_data) > MAX_FRAME_BYTES:
             return
 
         # Defence in depth: re-gate consent / pause / open on every publish.
@@ -119,6 +131,64 @@ class ScreenShareConsumer(AsyncWebsocketConsumer):
         except Exception:
             pass
         await self.close(code=4003)
+
+    async def _receive_control(self, text_data: str, data: dict) -> None:
+        """Relay a viewer control intent only when the device has approved."""
+        from apps.devices.application.services.screen_control import (
+            validate_control_intent,
+        )
+
+        if self.is_publisher:
+            return
+        if len(text_data) > MAX_CONTROL_BYTES:
+            await self._control_nack("invalid")
+            return
+        if not await self._control_allowed():
+            await self._control_nack("not_approved")
+            return
+        if not self._allow_control():
+            await self._control_nack("rate_limited")
+            return
+        intent = validate_control_intent(data.get("data"))
+        if intent is None:
+            await self._control_nack("invalid")
+            return
+        await self.channel_layer.group_send(
+            self.group,
+            {
+                "type": "screen.relay",
+                "payload": {
+                    "type": CONTROL_TYPE,
+                    "session_id": str(self.session_id),
+                    "data": intent,
+                },
+                "sender": self.channel_name,
+            },
+        )
+
+    async def _control_nack(self, reason: str) -> None:
+        try:
+            await self.send(
+                text_data=json.dumps(
+                    {
+                        "type": "screen.control_nack",
+                        "session_id": str(self.session_id),
+                        "reason": reason,
+                    }
+                )
+            )
+        except Exception:
+            pass
+
+    def _allow_control(self) -> bool:
+        now = time.monotonic()
+        if now - self._control_window_start >= 1.0:
+            self._control_window_start = now
+            self._controls_in_window = 0
+        if self._controls_in_window >= MAX_CONTROL_PER_SECOND:
+            return False
+        self._controls_in_window += 1
+        return True
 
     def _allow_frame(self) -> bool:
         now = time.monotonic()
@@ -188,3 +258,38 @@ class ScreenShareConsumer(AsyncWebsocketConsumer):
         if membership and membership.role in MONITOR_ROLES:
             return "viewer"
         return None
+
+    @database_sync_to_async
+    def _control_allowed(self) -> bool:
+        """Viewer may send control intents only with an explicit approved grant."""
+        from apps.devices.application.services.pairing_service import ConsentService
+        from apps.devices.application.services.screen_share_service import (
+            MONITOR_ROLES,
+            SCREEN_SCOPE,
+        )
+        from apps.devices.application.services.sharing_pause_service import (
+            SharingPauseService,
+        )
+        from apps.devices.infrastructure.models.screen_share import ScreenShareSession
+        from apps.tenants.infrastructure.models.membership import TenantMembership
+
+        session = (
+            ScreenShareSession.objects.filter(pk=self.session_id)
+            .select_related("device", "device__tenant")
+            .first()
+        )
+        if not session or not session.control_is_approved:
+            return False
+
+        device = session.device
+        consent = ConsentService().get_active_consent(device)
+        if not consent or not consent.has_scope(SCREEN_SCOPE):
+            return False
+        if SharingPauseService().get_active_pause(device):
+            return False
+        if device.owner_id == self.user.id:
+            return False
+        membership = TenantMembership.objects.filter(
+            user=self.user, tenant_id=session.tenant_id
+        ).first()
+        return bool(membership and membership.role in MONITOR_ROLES)

@@ -51,7 +51,9 @@ class OwnedScreenSharePendingView(APIView):
         device = Device.objects.filter(owner=request.user, pk=device_id).first()
         if not device:
             raise EntityNotFoundError("Device not found")
-        ScreenShareService().expire_stale_requested(device=device)
+        service = ScreenShareService()
+        service.expire_stale_requested(device=device)
+        service.expire_stale_control_requests(device=device)
         sessions = ScreenShareSession.objects.filter(
             device=device,
             status__in=[
@@ -116,5 +118,64 @@ class ScreenShareStatusView(APIView):
     def get(self, request, session_id):
         session = ScreenShareService().get_session_for_user(
             user=request.user, session_id=session_id
+        )
+        return Response(ScreenShareSessionSerializer(session).data)
+
+
+class ScreenShareControlRequestView(APIView):
+    """Monitor asks the paired device to approve remote input for this session."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session, created = ScreenShareService().request_control(
+            user=request.user, session_id=session_id
+        )
+        return Response(
+            ScreenShareSessionSerializer(session).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class ScreenShareControlApproveView(APIView):
+    """Paired device owner explicitly accepts a pending control grant."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = ScreenShareService().approve_control(
+            user=request.user, session_id=session_id
+        )
+        return Response(ScreenShareSessionSerializer(session).data)
+
+
+class ScreenShareControlDenyView(APIView):
+    """Paired device owner declines a pending control grant."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        serializer = ScreenShareEndSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        session = ScreenShareService().deny_control(
+            user=request.user,
+            session_id=session_id,
+            reason=serializer.validated_data.get("reason", ""),
+        )
+        return Response(ScreenShareSessionSerializer(session).data)
+
+
+class ScreenShareControlEndView(APIView):
+    """Either side ends an approved or still-pending control grant."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        serializer = ScreenShareEndSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        session = ScreenShareService().end_control(
+            user=request.user,
+            session_id=session_id,
+            reason=serializer.validated_data.get("reason", ""),
         )
         return Response(ScreenShareSessionSerializer(session).data)

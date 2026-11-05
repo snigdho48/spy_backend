@@ -25,6 +25,11 @@ class ScreenShareSessionSerializer(serializers.ModelSerializer):
             "ended_reason",
             "created_at",
             "ws_url",
+            "control_status",
+            "control_requested_at",
+            "control_started_at",
+            "control_ended_at",
+            "control_ended_reason",
         ]
         read_only_fields = fields
 

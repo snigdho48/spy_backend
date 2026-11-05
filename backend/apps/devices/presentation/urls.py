@@ -18,6 +18,10 @@ from apps.devices.presentation.views.keyword_views import (
 )
 from apps.devices.presentation.views.screen_share_views import (
     OwnedScreenSharePendingView,
+    ScreenShareControlApproveView,
+    ScreenShareControlDenyView,
+    ScreenShareControlEndView,
+    ScreenShareControlRequestView,
     ScreenShareDenyView,
     ScreenShareEndView,
     ScreenShareRequestView,
@@ -93,6 +97,26 @@ urlpatterns = [
         "screen/<uuid:session_id>/end/",
         ScreenShareEndView.as_view(),
         name="device-screen-end",
+    ),
+    path(
+        "screen/<uuid:session_id>/control/request/",
+        ScreenShareControlRequestView.as_view(),
+        name="device-screen-control-request",
+    ),
+    path(
+        "screen/<uuid:session_id>/control/approve/",
+        ScreenShareControlApproveView.as_view(),
+        name="device-screen-control-approve",
+    ),
+    path(
+        "screen/<uuid:session_id>/control/deny/",
+        ScreenShareControlDenyView.as_view(),
+        name="device-screen-control-deny",
+    ),
+    path(
+        "screen/<uuid:session_id>/control/end/",
+        ScreenShareControlEndView.as_view(),
+        name="device-screen-control-end",
     ),
     path(
         "screen/<uuid:session_id>/",

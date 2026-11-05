@@ -29,6 +29,9 @@ SCREEN_SCOPE = "screen"
 # Stale REQUESTED sessions auto-expire after this window (lazy on read).
 REQUEST_TTL = timedelta(minutes=15)
 
+# Unanswered control grants expire faster — the user is mid-session.
+CONTROL_REQUEST_TTL = timedelta(minutes=5)
+
 MONITOR_ROLES = (
     TenantMembership.Role.OWNER,
     TenantMembership.Role.ADMIN,
@@ -93,6 +96,7 @@ class ScreenShareService:
     def get_session_for_user(self, *, user: User, session_id) -> ScreenShareSession:
         """A session the user may see: the monitored owner or a tenant monitor."""
         self.expire_stale_requested()
+        self.expire_stale_control_requests()
         session = (
             ScreenShareSession.objects.filter(pk=session_id)
             .select_related("device", "device__tenant", "tenant")
@@ -121,6 +125,28 @@ class ScreenShareService:
         async_to_sync(channel_layer.group_send)(
             f"screen_{session_id}",
             {"type": "screen.closed", "reason": reason},
+        )
+
+    @staticmethod
+    def notify_control_state(session_id, signal: str, extra: dict | None = None) -> None:
+        """Broadcast a control lifecycle signal to the live ``screen_<id>`` group."""
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+        data = {"signal": signal}
+        if extra:
+            data.update(extra)
+        async_to_sync(channel_layer.group_send)(
+            f"screen_{session_id}",
+            {
+                "type": "screen.relay",
+                "payload": {
+                    "type": "screen.signal",
+                    "session_id": str(session_id),
+                    "data": data,
+                },
+                "sender": None,
+            },
         )
 
     def terminate_open_for_device(
@@ -156,6 +182,9 @@ class ScreenShareService:
             session.ended_reason = (reason or "")[:255]
             if session.started_at is None:
                 session.started_at = session.requested_at
+            control_fields = self._clear_control_fields(
+                session, reason=reason, now=now
+            )
             session.save(
                 update_fields=[
                     "status",
@@ -163,6 +192,7 @@ class ScreenShareService:
                     "ended_reason",
                     "started_at",
                     "updated_at",
+                    *control_fields,
                 ]
             )
             action = (
@@ -204,6 +234,38 @@ class ScreenShareService:
             )
             self._audit(session, None, "screen_share.expired", {"reason": "expired"})
             self.notify_session_closed(session.id, reason="expired")
+        return len(sessions)
+
+    def expire_stale_control_requests(self, *, device: Device | None = None) -> int:
+        """Expire unanswered control grants older than CONTROL_REQUEST_TTL."""
+        cutoff = timezone.now() - CONTROL_REQUEST_TTL
+        qs = ScreenShareSession.objects.filter(
+            control_status=ScreenShareSession.ControlStatus.REQUESTED,
+            control_requested_at__lt=cutoff,
+            status__in=[
+                ScreenShareSession.Status.REQUESTED,
+                ScreenShareSession.Status.ACTIVE,
+            ],
+        )
+        if device is not None:
+            qs = qs.filter(device=device)
+        sessions = list(qs.select_related("tenant", "device"))
+        if not sessions:
+            return 0
+        now = timezone.now()
+        for session in sessions:
+            fields = self._clear_control_fields(
+                session, reason="expired", now=now
+            )
+            session.save(update_fields=[*fields, "updated_at"])
+            self._audit(
+                session, None, "screen_share.control_expired", {"reason": "expired"}
+            )
+            self.notify_control_state(
+                session.id,
+                "control_ended",
+                {"reason": "expired", "control_status": session.control_status},
+            )
         return len(sessions)
 
     # ---- transitions ------------------------------------------------------
@@ -299,8 +361,15 @@ class ScreenShareService:
         session.status = ScreenShareSession.Status.DENIED
         session.ended_at = now
         session.ended_reason = (reason or "")[:255]
+        control_fields = self._clear_control_fields(session, reason=reason, now=now)
         session.save(
-            update_fields=["status", "ended_at", "ended_reason", "updated_at"]
+            update_fields=[
+                "status",
+                "ended_at",
+                "ended_reason",
+                "updated_at",
+                *control_fields,
+            ]
         )
         self._audit(session, user, "screen_share.denied", {"reason": session.ended_reason})
         self.notify_session_closed(session.id, reason="denied")
@@ -319,6 +388,7 @@ class ScreenShareService:
         session.ended_reason = (reason or "")[:255]
         if session.started_at is None:
             session.started_at = session.requested_at
+        control_fields = self._clear_control_fields(session, reason=reason, now=now)
         session.save(
             update_fields=[
                 "status",
@@ -326,11 +396,215 @@ class ScreenShareService:
                 "ended_reason",
                 "started_at",
                 "updated_at",
+                *control_fields,
             ]
         )
         self._audit(session, user, "screen_share.ended", {"reason": session.ended_reason})
         self.notify_session_closed(session.id, reason=session.ended_reason or "ended")
         return session
+
+    # ---- remote control grants -------------------------------------------
+
+    def _owned_session(self, *, user: User, session_id) -> ScreenShareSession:
+        session = (
+            ScreenShareSession.objects.filter(pk=session_id)
+            .select_related("device", "device__tenant", "tenant")
+            .first()
+        )
+        if not session or session.device.owner_id != user.id:
+            raise EntityNotFoundError("Screen share session not found")
+        return session
+
+    @staticmethod
+    def _clear_control_fields(session: ScreenShareSession, *, reason: str, now) -> list[str]:
+        """Reset a pending or approved control grant. Returns fields that changed."""
+        if session.control_status not in (
+            ScreenShareSession.ControlStatus.REQUESTED,
+            ScreenShareSession.ControlStatus.APPROVED,
+        ):
+            return []
+        session.control_status = ScreenShareSession.ControlStatus.NONE
+        session.control_ended_at = now
+        session.control_ended_reason = (reason or "")[:255]
+        return [
+            "control_status",
+            "control_ended_at",
+            "control_ended_reason",
+        ]
+
+    def request_control(self, *, user: User, session_id) -> tuple[ScreenShareSession, bool]:
+        """Monitor asks the paired device to approve remote input.
+
+        Returns ``(session, created)`` where ``created`` is False when a grant
+        is already pending or already approved (idempotent).
+        """
+        session = self.get_session_for_user(user=user, session_id=session_id)
+        if session.device.owner_id == user.id:
+            raise PermissionDeniedError("The paired device cannot request control of itself")
+        if not session.is_open:
+            raise ConflictError("Screen session is closed")
+        self._require_screen_consent(session.device)
+        self._require_not_paused(session.device)
+        self.expire_stale_control_requests(device=session.device)
+        session.refresh_from_db()
+
+        if session.control_status == ScreenShareSession.ControlStatus.APPROVED:
+            return session, False
+        if session.control_status == ScreenShareSession.ControlStatus.REQUESTED:
+            return session, False
+
+        now = timezone.now()
+        session.control_status = ScreenShareSession.ControlStatus.REQUESTED
+        session.control_requested_at = now
+        session.control_started_at = None
+        session.control_ended_at = None
+        session.control_ended_reason = ""
+        session.save(
+            update_fields=[
+                "control_status",
+                "control_requested_at",
+                "control_started_at",
+                "control_ended_at",
+                "control_ended_reason",
+                "updated_at",
+            ]
+        )
+        self._audit(session, user, "screen_share.control_requested")
+        self.notify_control_state(
+            session.id,
+            "control_requested",
+            {
+                "control_status": session.control_status,
+                "requested_by_email": user.email,
+            },
+        )
+        return session, True
+
+    def approve_control(self, *, user: User, session_id) -> ScreenShareSession:
+        """Paired device owner explicitly accepts a pending control grant."""
+        self.expire_stale_control_requests()
+        session = self._owned_session(user=user, session_id=session_id)
+        if not session.is_open:
+            raise ConflictError("Screen session is closed")
+        self._require_screen_consent(session.device)
+        self._require_not_paused(session.device)
+        if session.control_status == ScreenShareSession.ControlStatus.APPROVED:
+            return session
+        if session.control_status != ScreenShareSession.ControlStatus.REQUESTED:
+            raise ConflictError("No control request is waiting for approval")
+
+        now = timezone.now()
+        session.control_status = ScreenShareSession.ControlStatus.APPROVED
+        session.control_started_at = now
+        session.control_ended_at = None
+        session.control_ended_reason = ""
+        session.save(
+            update_fields=[
+                "control_status",
+                "control_started_at",
+                "control_ended_at",
+                "control_ended_reason",
+                "updated_at",
+            ]
+        )
+        self._audit(session, user, "screen_share.control_approved")
+        self.notify_control_state(
+            session.id,
+            "control_approved",
+            {"control_status": session.control_status},
+        )
+        return session
+
+    def deny_control(
+        self, *, user: User, session_id, reason: str = ""
+    ) -> ScreenShareSession:
+        """Paired device owner declines a pending control grant."""
+        session = self._owned_session(user=user, session_id=session_id)
+        if session.control_status == ScreenShareSession.ControlStatus.DENIED:
+            return session
+        if session.control_status != ScreenShareSession.ControlStatus.REQUESTED:
+            raise ConflictError("No control request is waiting to be declined")
+
+        now = timezone.now()
+        session.control_status = ScreenShareSession.ControlStatus.DENIED
+        session.control_ended_at = now
+        session.control_ended_reason = (reason or "")[:255]
+        session.save(
+            update_fields=[
+                "control_status",
+                "control_ended_at",
+                "control_ended_reason",
+                "updated_at",
+            ]
+        )
+        self._audit(
+            session, user, "screen_share.control_denied", {"reason": session.control_ended_reason}
+        )
+        self.notify_control_state(
+            session.id,
+            "control_denied",
+            {
+                "control_status": session.control_status,
+                "reason": session.control_ended_reason or "denied",
+            },
+        )
+        return session
+
+    def end_control(
+        self, *, user: User, session_id, reason: str = ""
+    ) -> ScreenShareSession:
+        """Either side ends an approved (or still-pending) control grant."""
+        session = self.get_session_for_user(user=user, session_id=session_id)
+        if session.control_status == ScreenShareSession.ControlStatus.NONE:
+            return session
+        if session.control_status == ScreenShareSession.ControlStatus.DENIED:
+            return session
+
+        now = timezone.now()
+        previous = session.control_status
+        session.control_status = ScreenShareSession.ControlStatus.NONE
+        session.control_ended_at = now
+        session.control_ended_reason = (reason or "")[:255]
+        session.save(
+            update_fields=[
+                "control_status",
+                "control_ended_at",
+                "control_ended_reason",
+                "updated_at",
+            ]
+        )
+        self._audit(
+            session,
+            user,
+            "screen_share.control_ended",
+            {"reason": session.control_ended_reason, "previous": previous},
+        )
+        self.notify_control_state(
+            session.id,
+            "control_ended",
+            {
+                "control_status": session.control_status,
+                "reason": session.control_ended_reason or "ended",
+            },
+        )
+        return session
+
+    def control_is_allowed_for_viewer(self, *, user: User, session_id) -> bool:
+        """WS gate: viewer may inject input only with an approved grant."""
+        try:
+            session = self.get_session_for_user(user=user, session_id=session_id)
+        except (EntityNotFoundError, PermissionDeniedError):
+            return False
+        if not session.control_is_approved:
+            return False
+        if session.device.owner_id == user.id:
+            return False
+        try:
+            self._require_screen_consent(session.device)
+            self._require_not_paused(session.device)
+        except (ConsentRequiredError, ConflictError):
+            return False
+        return True
 
     # ---- audit ------------------------------------------------------------
 
