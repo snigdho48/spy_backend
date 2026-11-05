@@ -41,6 +41,26 @@ class ScreenShareSession(TenantScopedModel):
     ended_at = models.DateTimeField(null=True, blank=True, db_index=True)
     ended_reason = models.CharField(max_length=255, blank=True, default="")
 
+    class ControlStatus(models.TextChoices):
+        NONE = "none", "None"
+        REQUESTED = "requested", "Requested"
+        APPROVED = "approved", "Approved"
+        DENIED = "denied", "Denied"
+
+    # Remote input is an elevation of an existing view session. It stays
+    # "none" until the monitor asks AND the paired device explicitly approves.
+    # View itself does not imply control.
+    control_status = models.CharField(
+        max_length=16,
+        choices=ControlStatus.choices,
+        default=ControlStatus.NONE,
+        db_index=True,
+    )
+    control_requested_at = models.DateTimeField(null=True, blank=True)
+    control_started_at = models.DateTimeField(null=True, blank=True)
+    control_ended_at = models.DateTimeField(null=True, blank=True)
+    control_ended_reason = models.CharField(max_length=255, blank=True, default="")
+
     class Meta:
         db_table = "devices_screen_share_session"
         indexes = [
@@ -56,3 +76,11 @@ class ScreenShareSession(TenantScopedModel):
     def is_open(self) -> bool:
         """True while the session can still carry live frames."""
         return self.status in (self.Status.REQUESTED, self.Status.ACTIVE)
+
+    @property
+    def control_is_approved(self) -> bool:
+        """True only while view is open AND the device has approved control."""
+        return (
+            self.is_open
+            and self.control_status == self.ControlStatus.APPROVED
+        )
